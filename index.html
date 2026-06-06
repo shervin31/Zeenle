@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Zeenle | Community Events</title>
-  <meta name="description" content="Discover and create community events near you.">
+  <meta name="description" content="Discover workshops, screenings, retreats and festivals happening near you.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,36 +15,27 @@
 
 <!-- NAV -->
 <nav class="nav">
-  <button class="hamburger" id="hamburger" aria-label="Menu">
-    <span></span><span></span><span></span>
-  </button>
+  <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
   <a class="nav-logo" href="#" onclick="go('home');return false">Zeenle</a>
   <div class="nav-links">
     <a href="#" data-page="home"    onclick="go('home');return false" class="active">Events</a>
+    <a href="#" data-page="about"   onclick="go('about');return false">About</a>
+    <a href="#" data-page="contact" onclick="go('contact');return false">Contact</a>
     <a href="#" data-page="create"  onclick="authUser?go('create'):openModal();return false">Create Event</a>
     <a href="#" data-page="account" onclick="go('account');return false">My Account</a>
   </div>
   <div class="nav-actions">
-    <button class="btn-ghost show-out" onclick="openModal('login')">Login</button>
-    <button class="btn-red show-out"   onclick="authUser?go('create'):openModal()">+ Create Event</button>
+    <button class="btn-outline show-out" onclick="openModal('login')">Login</button>
+    <button class="btn-red   show-out" onclick="authUser?go('create'):openModal()">+ Create Event</button>
     <div class="nav-user show-in" style="display:none" onclick="toggleDropdown()">
       <div class="nav-av" id="nav-av">?</div>
       <span class="nav-uname" id="nav-uname"></span>
-      <svg class="nav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
       <div class="dropdown" id="nav-dd">
-        <a href="#" onclick="go('account');return false">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
-          My Account
-        </a>
-        <a href="#" onclick="go('create');return false">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-          Create Event
-        </a>
+        <a href="#" onclick="go('account');return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>My Account</a>
+        <a href="#" onclick="go('create');return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>Create Event</a>
         <div class="dd-sep"></div>
-        <button class="dd-danger" onclick="doLogout()">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
-          Log Out
-        </button>
+        <button class="dd-danger" onclick="doLogout()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>Log Out</button>
       </div>
     </div>
   </div>
@@ -53,40 +44,29 @@
 <!-- DRAWER -->
 <div class="overlay" id="overlay"></div>
 <aside class="drawer" id="drawer">
-  <div class="drawer-head">
-    <span class="drawer-logo">Zeenle</span>
-    <button class="drawer-x" id="drawer-close-btn">✕</button>
-  </div>
+  <div class="drawer-head"><span class="drawer-logo">Zeenle</span><button class="drawer-x" id="drawer-close-btn">✕</button></div>
   <div class="drawer-body">
     <nav class="drawer-nav">
-      <a href="#" onclick="go('home');return false">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
-        Home
-      </a>
-      <a href="#" onclick="authUser?go('create'):(openModal(),closeDrawer());return false">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-        Create Event
-      </a>
+      <a href="#" onclick="go('home');return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>Events</a>
+      <a href="#" onclick="go('about');return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>About</a>
+      <a href="#" onclick="go('contact');return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>Contact</a>
+      <a href="#" onclick="authUser?go('create'):(openModal(),closeDrawer());return false"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>Create Event</a>
       <div class="drawer-sep"></div>
       <div id="drawer-auth"></div>
     </nav>
   </div>
-  <div class="drawer-foot">Zeenle Events © 2026</div>
+  <div class="drawer-foot">Zeenle Events © 2026 · Azarbod Inc.</div>
 </aside>
 
 <!-- AUTH MODAL -->
 <div class="moverlay" id="auth-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <div class="modal-head">
-      <div class="modal-logo">Zeenle</div>
-      <button class="mclose" onclick="closeModal()">✕</button>
-    </div>
+    <div class="modal-head"><div class="modal-logo">Zeenle</div><button class="mclose" onclick="closeModal()">✕</button></div>
     <div class="mtabs">
       <button class="mtab on" data-tab="login"  onclick="switchTab('login')">Sign In</button>
       <button class="mtab"    data-tab="signup" onclick="switchTab('signup')">Create Account</button>
       <button class="mtab"    data-tab="phone"  onclick="switchTab('phone')">📱 Phone</button>
     </div>
-
     <!-- Sign In -->
     <div class="mform on" id="mf-login">
       <form id="login-form">
@@ -96,33 +76,19 @@
       </form>
       <div class="or-sep">or continue with</div>
       <div class="oauth-row">
-        <button class="obtn" onclick="doOAuth('google')">
-          <svg width="15" height="15" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-          Google
-        </button>
-        <button class="obtn" onclick="doOAuth('azure')">
-          <svg width="15" height="15" viewBox="0 0 24 24"><path d="M11.5 3L3 20.5h5l2-4.5h7l2 4.5h5L16.5 3zm0 4l2.5 6h-5z" fill="#00a4ef"/></svg>
-          Microsoft
-        </button>
-        <button class="obtn" onclick="doOAuth('apple')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-          Apple
-        </button>
+        <button class="obtn" onclick="doOAuth('google')"><svg width="15" height="15" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Google</button>
+        <button class="obtn" onclick="doOAuth('azure')"><svg width="15" height="15" viewBox="0 0 24 24"><path d="M11.5 3L3 20.5h5l2-4.5h7l2 4.5h5L16.5 3zm0 4l2.5 6h-5z" fill="#00a4ef"/></svg>Microsoft</button>
+        <button class="obtn" onclick="doOAuth('apple')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>Apple</button>
       </div>
       <div class="mfooter">No account? <a href="#" onclick="switchTab('signup');return false">Create one →</a></div>
     </div>
-
     <!-- Sign Up -->
     <div class="mform" id="mf-signup">
       <form id="signup-form">
         <div class="mfield"><label class="mlabel">Full Name</label><input id="s-name" type="text" class="minput" placeholder="Your name" required autocomplete="name"></div>
         <div class="mfield"><label class="mlabel">Email</label><input id="s-email" type="email" class="minput" placeholder="you@example.com" required autocomplete="email"></div>
         <div class="mfield"><label class="mlabel">Password</label><input id="s-pass" type="password" class="minput" placeholder="Create a password" autocomplete="new-password" oninput="liveCheck(this.value)"></div>
-        <div class="pw-checks">
-          <span id="pwc-len"   class="pwc">✗ At least 8 characters</span>
-          <span id="pwc-up"    class="pwc">✗ At least 1 uppercase letter</span>
-          <span id="pwc-sp"    class="pwc">✗ At least 1 special character (!@#$%...)</span>
-        </div>
+        <div class="pw-checks"><span id="pwc-len" class="pwc">✗ At least 8 characters</span><span id="pwc-up" class="pwc">✗ At least 1 uppercase letter</span><span id="pwc-sp" class="pwc">✗ At least 1 special character</span></div>
         <div class="mfield"><label class="mlabel">Confirm Password</label><input id="s-conf" type="password" class="minput" placeholder="Repeat password" autocomplete="new-password" oninput="liveMatch()"></div>
         <div class="pw-checks" style="margin-bottom:13px"><span id="pwc-match" class="pwc">✗ Passwords match</span></div>
         <button id="s-btn" type="submit" class="btn-auth">Create Account →</button>
@@ -135,7 +101,6 @@
       </div>
       <div class="mfooter">Already have an account? <a href="#" onclick="switchTab('login');return false">Sign in →</a></div>
     </div>
-
     <!-- Phone -->
     <div class="phone-step" id="phone-step"></div>
   </div>
@@ -145,34 +110,29 @@
 <div id="page-home" class="page-view active">
   <div class="page">
     <section class="hero">
-      <div class="hero-label">Community Events Platform</div>
-      <h1>Discover events near you</h1>
-      <p>Workshops, screenings, retreats and festivals — find what's happening in your community.</p>
+      <div class="hero-label">Zeenle Events</div>
+      <h1>Find events that<br>matter to you</h1>
+      <p>Workshops, screenings, retreats and festivals — discover what's on near you.</p>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search events, topics, locations…" oninput="doSearch(this.value)">
         <button onclick="doSearch(document.getElementById('search-input').value)">Search</button>
       </div>
     </section>
     <div class="loc-bar" id="loc-bar"></div>
-    <div class="filter-bar">
-      <span class="filter-label">Filter</span>
-      <div id="filter-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-    </div>
+    <div class="filter-bar"><span class="filter-label">Filter</span><div id="filter-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
     <div class="events-wrap">
       <div class="sec-head"><h2>Upcoming Events</h2><a href="#" onclick="setFilter('All');return false">View all →</a></div>
-      <div class="events-grid" id="events-grid">
-        <div style="grid-column:1/-1;text-align:center;padding:60px;color:#9CA3AF;font-size:14px">Loading events…</div>
-      </div>
+      <div class="events-grid" id="events-grid"><div style="grid-column:1/-1;text-align:center;padding:60px;color:#9CA3AF">Loading events…</div></div>
     </div>
     <footer class="footer">
       <div class="footer-inner">
         <div class="footer-grid">
           <div class="footer-brand">
             <div class="fn">Zeenle</div>
-            <p>Connecting communities through meaningful events — workshops, screenings, retreats, and gatherings across the Greater Toronto Area.</p>
+            <p>©2026 Zeenle Events is a trademark of Azarbod Inc.<br>All rights reserved.</p>
           </div>
           <div class="footer-col">
-            <h4>Platform</h4>
+            <h4>Explore</h4>
             <a href="#" onclick="go('home');return false">Browse Events</a>
             <a href="#" onclick="go('create');return false">Create Event</a>
             <a href="#" onclick="go('account');return false">My Account</a>
@@ -181,20 +141,21 @@
           </div>
           <div class="footer-col">
             <h4>Company</h4>
-            <a href="#">About Us</a>
-            <a href="#">Contact Us</a>
+            <a href="#" onclick="go('about');return false">About Us</a>
+            <a href="#" onclick="go('contact');return false">Contact Us</a>
             <a href="#">Privacy Policy</a>
             <a href="#">Terms of Use</a>
           </div>
           <div class="footer-col">
-            <h4>Contact</h4>
-            <div class="fc-row"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>416 300-0602</div>
-            <div class="fc-row"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>mrezair@zeenle.com</div>
+            <h4>Connect</h4>
+            <a href="tel:4163000602">📞 416 300-0602</a>
+            <a href="mailto:mrezair@zeenle.com">✉️ mrezair@zeenle.com</a>
+            <a href="https://instagram.com" target="_blank" rel="noopener">📷 Instagram</a>
           </div>
         </div>
         <div class="footer-bot">
-          <span>©2026 Zeenle Events is a trademark of Azarbod Inc. All rights reserved.</span>
-          <div class="footer-links"><a href="#">Privacy Policy</a><a href="#">Terms of Use</a><a href="#">Contact</a></div>
+          <span>©2026 Zeenle Events — Azarbod Inc.</span>
+          <div class="footer-links"><a href="#" onclick="go('about');return false">About</a><a href="#" onclick="go('contact');return false">Contact</a><a href="#">Privacy</a><a href="#">Terms</a></div>
         </div>
       </div>
     </footer>
@@ -209,6 +170,12 @@
 
 <!-- ACCOUNT -->
 <div id="page-account" class="page-view"><div class="page"><div class="acct-wrap" id="account-content"></div></div></div>
+
+<!-- ABOUT -->
+<div id="page-about" class="page-view"><div class="page"><div class="content-wrap" id="about-content"></div></div></div>
+
+<!-- CONTACT -->
+<div id="page-contact" class="page-view"><div class="page"><div class="content-wrap" id="contact-content"></div></div></div>
 
 <script src="js/main.js"></script>
 </body>
