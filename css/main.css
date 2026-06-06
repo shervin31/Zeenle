@@ -192,7 +192,7 @@ ul{list-style:none}
 .sec-head h2{font-size:15px;font-weight:700;color:var(--text)}
 .sec-head a{font-size:13px;color:var(--accent);font-weight:500}
 .sec-head a:hover{text-decoration:underline}
-.events-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.events-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
 
 /* ── EVENT CARD ── */
 .ecard{
@@ -200,9 +200,10 @@ ul{list-style:none}
   overflow:hidden;cursor:pointer;transition:box-shadow var(--t),border-color var(--t);
 }
 .ecard:hover{box-shadow:0 4px 20px rgba(0,0,0,0.1);border-color:var(--border-2)}
-.ecard-poster{line-height:0;background:#111;overflow:hidden}
+.ecard-poster{line-height:0;background:#111;overflow:hidden;position:relative;padding-bottom:133%;}
+.ecard-poster svg,.ecard-poster img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
 .ecard-poster svg{width:100%;display:block}
-.ecard-body{padding:16px}
+.ecard-body{padding:16px;flex:1}
 .ecard-tags{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
 .tag{
   font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;
@@ -517,7 +518,7 @@ ul{list-style:none}
   .detail-wrap,.form-wrap,.acct-wrap{padding:20px 14px}
   .footer-grid{grid-template-columns:1fr}
   .footer-bot{flex-direction:column;gap:10px;text-align:center}
-  .events-grid{grid-template-columns:1fr}
+  .events-grid{grid-template-columns:1fr 1fr}
   .frow,.frow.x3{grid-template-columns:1fr}
   .acct-banner{flex-direction:column;text-align:center}
   .tcard{grid-template-columns:1fr}
@@ -527,3 +528,18 @@ ul{list-style:none}
 }
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fu{animation:fu 0.25s ease both}
+
+/* ── LOCATION BAR ── */
+.loc-bar{background:#fff;border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-2)}
+.loc-bar svg{width:14px;height:14px;color:var(--accent);flex-shrink:0}
+.loc-btn{font-size:12px;font-weight:600;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline}
+.loc-btn:hover{color:var(--accent-h)}
+.loc-text{flex:1}
+.loc-badge{background:var(--accent-lt);color:var(--accent);font-size:11px;font-weight:700;padding:2px 8px;border-radius:2px;white-space:nowrap}
+
+/* ── CARPOOL MODAL ── */
+.cpool-form{padding:0 20px 20px}
+.cpool-form .mfield{margin-bottom:12px}
+
+/* ── NOTIFICATION DOT ── */
+.notif-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;margin-left:4px;vertical-align:middle}
