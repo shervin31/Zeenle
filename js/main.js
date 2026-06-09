@@ -492,11 +492,11 @@ function makeCardImageHTML(ev) {
   const posY = `${((ev.focalY ?? 0.5) * 100).toFixed(1)}%`;
   if (ev.poster_url) {
     return `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" loading="lazy"
-      style="width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0;object-position:${posX} ${posY}"
+      style="width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0;object-position:${posX} ${posY};pointer-events:none"
       onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
-    ><div style="display:none;position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
+    ><div style="display:none;position:absolute;inset:0;pointer-events:none">${makePosterSVG(ev)}</div>`;
   }
-  return `<div style="position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
+  return `<div style="position:absolute;inset:0;pointer-events:none">${makePosterSVG(ev)}</div>`;
 }
 
 /* ─── SORT & FILTER ─────────────────────────────────── */
