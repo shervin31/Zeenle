@@ -1,7 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   Zeenle | main.js  —  Production build
-   Bug fixes: category linking, is_public, poster upload,
-              XSS sanitization, pagination, state management
+   Zeenle | main.js  —  Production build + Image system
 ═══════════════════════════════════════════════════════ */
 
 const SB_URL = 'https://pfuylqlexsaoryyxnrma.supabase.co';
@@ -13,7 +11,7 @@ let appState = {
   page: 'home',
   selectedEvent: null,
   filter: 'All',
-  sortBy: 'date',      // date | popular | distance | newest | trending
+  sortBy: 'date',
   searchQuery: '',
   events: [],
   categories: [],
@@ -24,7 +22,6 @@ let appState = {
   userLng: null,
   locLabel: '',
   sortByLoc: false,
-  // form state
   fLangs: [],
   fMode: 'In Person',
   fAddrVis: 'All',
@@ -35,22 +32,34 @@ let appState = {
   fDoor: true,
   fCarpool: true,
   fPosterFile: null,
-  // phone auth
+  fPosterFocalX: 0.5,
+  fPosterFocalY: 0.5,
   phoneStep: 'number',
   phoneTmp: '',
-  // pagination
   page_num: 0,
   PAGE_SIZE: 24,
   hasMore: false,
-  // abort controller for in-flight requests
   fetchController: null,
+};
+
+/* ─── CROP EDITOR STATE ─────────────────────────────── */
+const cropState = {
+  file: null,
+  objectUrl: null,
+  focalX: 0.5,
+  focalY: 0.5,
+  dragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  dragStartFX: 0,
+  dragStartFY: 0,
+  zoom: 1,
 };
 
 /* ─── HELPERS ───────────────────────────────────────── */
 const g = id => document.getElementById(id);
 const v = id => g(id)?.value?.trim() || '';
 
-// XSS sanitizer — always use this before inserting user content into innerHTML
 function esc(str) {
   if (!str) return '';
   return String(str)
@@ -85,31 +94,16 @@ function setBtnLoad(btn, txt, on = true) {
 async function bootAuth() {
   const { data: { session } } = await sb.auth.getSession();
   if (session?.user) await syncUser(session.user);
-
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN') {
-      await syncUser(session.user);
-      closeModal();
-      toast('Welcome to Zeenle!', 'ok');
-    }
-    if (event === 'SIGNED_OUT') {
-      appState.authUser = null;
-      appState.profile = null;
-      refreshAuthUI();
-      if (appState.page === 'account') go('home');
-    }
+    if (event === 'SIGNED_IN') { await syncUser(session.user); closeModal(); toast('Welcome to Zeenle!', 'ok'); }
+    if (event === 'SIGNED_OUT') { appState.authUser = null; appState.profile = null; refreshAuthUI(); if (appState.page === 'account') go('home'); }
   });
 }
 
 async function syncUser(user) {
   appState.authUser = user;
   const { data, error } = await sb.from('users').upsert(
-    {
-      id: user.id,
-      email: user.email,
-      full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-      avatar_url: user.user_metadata?.avatar_url || '',
-    },
+    { id: user.id, email: user.email, full_name: user.user_metadata?.full_name || user.user_metadata?.name || '', avatar_url: user.user_metadata?.avatar_url || '' },
     { onConflict: 'id' }
   ).select().single();
   if (!error) appState.profile = data;
@@ -132,11 +126,7 @@ async function doSignup(e) {
   if (pass !== conf) { toast('Passwords do not match.', 'err'); return; }
   const btn = g('s-btn');
   setBtnLoad(btn, 'Creating account…');
-  const { error } = await sb.auth.signUp({
-    email: v('s-email'),
-    password: pass,
-    options: { data: { full_name: v('s-name') }, emailRedirectTo: location.origin + '/Zeenle/' },
-  });
+  const { error } = await sb.auth.signUp({ email: v('s-email'), password: pass, options: { data: { full_name: v('s-name') }, emailRedirectTo: location.origin + '/Zeenle/' } });
   setBtnLoad(btn, 'Create account', false);
   if (error) toast(niceErr(error), 'err');
   else { closeModal(); toast('Account created! Check your email to confirm.', 'ok'); }
@@ -193,28 +183,16 @@ function renderPhone() {
   }
 }
 
-async function doLogout() {
-  await sb.auth.signOut();
-  closeDropdown();
-  closeDrawer();
-  toast('Signed out.');
-}
+async function doLogout() { await sb.auth.signOut(); closeDropdown(); closeDrawer(); toast('Signed out.'); }
 
-function pwOk(p) {
-  return p.length >= 8 && /[A-Z]/.test(p) && /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p);
-}
+function pwOk(p) { return p.length >= 8 && /[A-Z]/.test(p) && /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p); }
 function liveCheck(val) {
   setChk('pwc-len', val.length >= 8, 'At least 8 characters');
   setChk('pwc-up', /[A-Z]/.test(val), 'At least 1 uppercase letter');
   setChk('pwc-sp', /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(val), 'At least 1 special character');
 }
 function liveMatch() { setChk('pwc-match', v('s-pass') === v('s-conf') && v('s-conf').length > 0, 'Passwords match'); }
-function setChk(id, ok, lbl) {
-  const el = g(id);
-  if (!el) return;
-  el.textContent = (ok ? '✓ ' : '✗ ') + lbl;
-  el.className = 'pwc' + (ok ? ' ok' : '');
-}
+function setChk(id, ok, lbl) { const el = g(id); if (!el) return; el.textContent = (ok ? '✓ ' : '✗ ') + lbl; el.className = 'pwc' + (ok ? ' ok' : ''); }
 function niceErr(e) {
   const m = e.message || '';
   if (m.includes('Invalid login')) return 'Incorrect email or password.';
@@ -245,26 +223,14 @@ function requestLocation() {
   if (!navigator.geolocation) { toast('Geolocation is not supported by your browser.', 'err'); return; }
   const btn = g('loc-main-btn');
   if (btn) { btn.textContent = 'Locating…'; btn.disabled = true; }
-
   navigator.geolocation.getCurrentPosition(async pos => {
     appState.userLat = pos.coords.latitude;
     appState.userLng = pos.coords.longitude;
     try {
-      const r = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${appState.userLat}&lon=${appState.userLng}&format=json&zoom=14`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${appState.userLat}&lon=${appState.userLng}&format=json&zoom=14`, { headers: { 'Accept-Language': 'en' } });
       const d = await r.json();
-      appState.locLabel = d.address?.neighbourhood
-        || d.address?.suburb
-        || d.address?.quarter
-        || d.address?.district
-        || d.address?.city_district
-        || d.address?.city
-        || d.address?.town
-        || 'your area';
+      appState.locLabel = d.address?.neighbourhood || d.address?.suburb || d.address?.quarter || d.address?.district || d.address?.city_district || d.address?.city || d.address?.town || 'your area';
     } catch (_) { appState.locLabel = 'your area'; }
-
     appState.sortByLoc = true;
     appState.sortBy = 'distance';
     updateLocBar();
@@ -278,13 +244,9 @@ function requestLocation() {
 }
 
 function clearLocation() {
-  appState.userLat = null;
-  appState.userLng = null;
-  appState.locLabel = '';
-  appState.sortByLoc = false;
+  appState.userLat = null; appState.userLng = null; appState.locLabel = ''; appState.sortByLoc = false;
   if (appState.sortBy === 'distance') appState.sortBy = 'date';
-  updateLocBar();
-  loadEvents();
+  updateLocBar(); loadEvents();
 }
 
 function updateLocBar() {
@@ -310,41 +272,28 @@ async function loadCategories() {
   return appState.categories;
 }
 
-/* ─── EVENTS — FIX: proper category resolution, no samples in prod ── */
+/* ─── EVENTS ────────────────────────────────────────── */
 async function loadEvents() {
-  // Cancel any in-flight request
   if (appState.fetchController) appState.fetchController.abort();
   appState.fetchController = new AbortController();
-
   const grid = g('events-grid');
   if (grid) grid.innerHTML = '<div class="no-results"><p>Loading events…</p></div>';
-
   try {
-    // ── BUG FIX 1: query must match exact DB column values ──
-    // is_public=true AND status='published' — both required
-    // We fetch without category filter here; filter client-side for better UX
-    let query = sb
+    const { data, error } = await sb
       .from('events')
-      .select('*, categories(id, name)')
+      .select('*')
       .eq('is_public', true)
       .eq('status', 'published')
       .order('start_at', { ascending: true })
       .range(appState.page_num * appState.PAGE_SIZE, (appState.page_num + 1) * appState.PAGE_SIZE - 1);
-
-    const { data, error, count } = await query;
-
     if (error) throw error;
-
     appState.hasMore = data && data.length === appState.PAGE_SIZE;
-
-    // ── BUG FIX 2: map DB rows robustly, never drop events with null category ──
     appState.events = (data || []).map(e => ({
       id: e.id,
       dbId: e.id,
       title: e.title || 'Untitled Event',
-      // Fallback: use categories join, then category_name text field, then 'Event'
-      category: e.categories?.name || e.category_name || 'Event',
-      categoryId: e.categories?.id || e.category_id || null,
+      category: e.category_name || 'Event',
+      categoryId: e.category_id || null,
       date: e.start_at ? new Date(e.start_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '',
       dateISO: e.start_at || '',
       time: e.start_at ? new Date(e.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
@@ -361,13 +310,14 @@ async function loadEvents() {
       mode: e.mode || 'In Person',
       lang: (e.languages || []).join(', '),
       carpool: !!e.allow_carpool,
-      tags: [e.categories?.name || e.category_name || 'Event'],
-      emoji: catEmoji(e.categories?.name || e.category_name),
+      tags: [e.category_name || 'Event'],
+      emoji: catEmoji(e.category_name),
       poster_url: e.poster_url || null,
+      focalX: e.focal_x ?? 0.5,
+      focalY: e.focal_y ?? 0.5,
       views: e.view_count || 0,
       createdAt: e.created_at || '',
     }));
-
   } catch (err) {
     if (err.name !== 'AbortError') {
       console.error('loadEvents error:', err);
@@ -375,7 +325,6 @@ async function loadEvents() {
       return;
     }
   }
-
   renderCards();
 }
 
@@ -392,7 +341,6 @@ function posterColors(id) {
 function makePosterSVG(ev) {
   const [c1, c2] = posterColors(ev.dbId || ev.id);
   const cat = esc((ev.category || 'EVENT').toUpperCase());
-  // Safe title word-wrap — use esc() first
   const safeTitle = esc(ev.title || '');
   const words = safeTitle.split(' ');
   const lines = [];
@@ -402,7 +350,6 @@ function makePosterSVG(ev) {
     else { line = (line + ' ' + w).trim(); }
   }
   if (line) lines.push(line);
-
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400" style="width:100%;height:100%;display:block;position:absolute;inset:0">
     <defs><linearGradient id="g${esc(String(ev.id))}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs>
     <rect width="300" height="400" fill="url(#g${esc(String(ev.id))})"/>
@@ -420,101 +367,253 @@ function makePosterSVG(ev) {
   </svg>`;
 }
 
+/* ─── IMAGE CARD RENDERING ──────────────────────────── */
+function makeCardImageHTML(ev) {
+  const posX = `${((ev.focalX ?? 0.5) * 100).toFixed(1)}%`;
+  const posY = `${((ev.focalY ?? 0.5) * 100).toFixed(1)}%`;
+  if (ev.poster_url) {
+    return `<img
+      src="${esc(ev.poster_url)}"
+      alt="${esc(ev.title)}"
+      loading="lazy"
+      style="width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0;object-position:${posX} ${posY}"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
+    ><div style="display:none;position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
+  }
+  return `<div style="position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
+}
+
+/* ─── POSTER PICKER & CROP EDITOR ───────────────────── */
+function posterPicked(inp) {
+  const f = inp.files[0];
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('Please select an image file (JPG, PNG, GIF, WebP).', 'err'); inp.value = ''; return; }
+  if (f.size > 10 * 1024 * 1024) { toast('Image must be under 10MB.', 'err'); inp.value = ''; return; }
+  if (cropState.objectUrl) URL.revokeObjectURL(cropState.objectUrl);
+  cropState.file = f;
+  cropState.objectUrl = URL.createObjectURL(f);
+  cropState.focalX = 0.5;
+  cropState.focalY = 0.5;
+  cropState.zoom = 1;
+  appState.fPosterFile = f;
+  openCropEditor();
+}
+
+function openCropEditor() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'crop-editor-overlay';
+  overlay.innerHTML = `
+    <div id="crop-modal">
+      <div id="crop-header">
+        <span id="crop-title">Adjust image</span>
+        <button id="crop-close" onclick="discardCrop()" aria-label="Cancel">✕</button>
+      </div>
+      <div id="crop-body">
+        <div id="crop-stage-wrap">
+          <div id="crop-stage"
+            onmousedown="cropDragStart(event)"
+            onmousemove="cropDragMove(event)"
+            onmouseup="cropDragEnd()"
+            onmouseleave="cropDragEnd()"
+            ontouchstart="cropTouchStart(event)"
+            ontouchmove="cropTouchMove(event)"
+            ontouchend="cropDragEnd()">
+            <img id="crop-img" src="${cropState.objectUrl}" alt="Event poster" draggable="false">
+          </div>
+          <div id="crop-hint">Drag to reposition · Scroll or pinch to zoom</div>
+        </div>
+        <div id="crop-preview-col">
+          <div id="crop-preview-label">Card preview</div>
+          <div id="crop-preview-card">
+            <div id="crop-preview-img-wrap">
+              <img id="crop-preview-img" src="${cropState.objectUrl}" alt="Preview" draggable="false">
+            </div>
+            <div id="crop-preview-info">
+              <div id="crop-preview-title">${esc(appState.events[0]?.title || 'Event title')}</div>
+              <div id="crop-preview-meta">Workshop · Free</div>
+            </div>
+          </div>
+          <div id="crop-controls">
+            <div class="ctrl-row">
+              <span class="ctrl-label">Zoom</span>
+              <input type="range" id="zoom-slider" min="100" max="300" step="1" value="100" oninput="setZoom(this.value / 100)" style="flex:1">
+              <span id="zoom-val" class="ctrl-val">1×</span>
+            </div>
+            <div class="ctrl-row" style="margin-top:6px">
+              <button class="crop-btn-reset" onclick="resetCrop()">Reset position</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="crop-footer">
+        <button id="crop-discard" onclick="discardCrop()">Cancel</button>
+        <button id="crop-confirm" onclick="confirmCrop()">Use this image →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  updateCropImage();
+
+  const stage = document.getElementById('crop-stage');
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    setZoom(Math.min(3, Math.max(1, cropState.zoom + (e.deltaY > 0 ? -0.08 : 0.08))));
+  }, { passive: false });
+
+  let lastDist = 0;
+  stage.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  });
+  stage.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      setZoom(Math.min(3, Math.max(1, cropState.zoom + (dist - lastDist) / 200)));
+      lastDist = dist;
+    }
+  }, { passive: false });
+}
+
+function updateCropImage() {
+  const img = document.getElementById('crop-img');
+  const prev = document.getElementById('crop-preview-img');
+  if (!img) return;
+  const posX = `${(cropState.focalX * 100).toFixed(1)}%`;
+  const posY = `${(cropState.focalY * 100).toFixed(1)}%`;
+  img.style.transform = `scale(${cropState.zoom})`;
+  img.style.transformOrigin = `${posX} ${posY}`;
+  if (prev) { prev.style.objectPosition = `${posX} ${posY}`; prev.style.transform = `scale(${cropState.zoom})`; prev.style.transformOrigin = `${posX} ${posY}`; }
+}
+
+function setZoom(z) {
+  cropState.zoom = Math.min(3, Math.max(1, z));
+  const slider = document.getElementById('zoom-slider');
+  const val = document.getElementById('zoom-val');
+  if (slider) slider.value = Math.round(cropState.zoom * 100);
+  if (val) val.textContent = cropState.zoom.toFixed(1) + '×';
+  updateCropImage();
+}
+
+function resetCrop() { cropState.focalX = 0.5; cropState.focalY = 0.5; cropState.zoom = 1; setZoom(1); updateCropImage(); }
+
+function cropDragStart(e) {
+  if (e.button !== 0) return;
+  cropState.dragging = true;
+  cropState.dragStartX = e.clientX; cropState.dragStartY = e.clientY;
+  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
+  document.getElementById('crop-stage').style.cursor = 'grabbing';
+}
+
+function cropDragMove(e) {
+  if (!cropState.dragging) return;
+  const stage = document.getElementById('crop-stage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.clientX - cropState.dragStartX) / (rect.width * 0.5)));
+  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.clientY - cropState.dragStartY) / (rect.height * 0.5)));
+  updateCropImage();
+}
+
+function cropDragEnd() {
+  cropState.dragging = false;
+  const stage = document.getElementById('crop-stage');
+  if (stage) stage.style.cursor = 'grab';
+}
+
+function cropTouchStart(e) {
+  if (e.touches.length !== 1) return;
+  cropState.dragging = true;
+  cropState.dragStartX = e.touches[0].clientX; cropState.dragStartY = e.touches[0].clientY;
+  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
+}
+
+function cropTouchMove(e) {
+  if (!cropState.dragging || e.touches.length !== 1) return;
+  e.preventDefault();
+  const stage = document.getElementById('crop-stage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.touches[0].clientX - cropState.dragStartX) / (rect.width * 0.5)));
+  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.touches[0].clientY - cropState.dragStartY) / (rect.height * 0.5)));
+  updateCropImage();
+}
+
+function confirmCrop() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  appState.fPosterFocalX = cropState.focalX;
+  appState.fPosterFocalY = cropState.focalY;
+  const area = document.getElementById('upload-area');
+  if (area) {
+    area.innerHTML = `
+      <div id="upload-preview-wrap">
+        <img id="upload-preview" src="${cropState.objectUrl}" alt="Poster preview"
+          style="object-position:${(cropState.focalX * 100).toFixed(1)}% ${(cropState.focalY * 100).toFixed(1)}%">
+        <button id="upload-change-btn" onclick="document.getElementById('f-poster').click()" type="button">Change image</button>
+      </div>
+      <input id="f-poster" type="file" style="display:none" accept="image/*" onchange="posterPicked(this)">`;
+    area.onclick = null;
+  }
+}
+
+function discardCrop() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  if (cropState.objectUrl) { URL.revokeObjectURL(cropState.objectUrl); cropState.objectUrl = null; }
+  cropState.file = null;
+  appState.fPosterFile = null;
+}
+
+/* ─── POSTER UPLOAD ─────────────────────────────────── */
+async function uploadPosterIfNeeded() {
+  if (!appState.fPosterFile) return null;
+  const f = appState.fPosterFile;
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (!['jpg','jpeg','png','gif','webp'].includes(ext)) { toast('Unsupported image format.', 'err'); return null; }
+  const path = `events/${appState.authUser.id}/${Date.now()}.${ext}`;
+  const { data: uploadData, error: uploadErr } = await sb.storage.from('posters').upload(path, f, { cacheControl: '3600', upsert: false });
+  if (uploadErr) { toast(`Image upload failed: ${uploadErr.message}. Event will save without image.`, 'err'); return null; }
+  const { data: urlData } = sb.storage.from('posters').getPublicUrl(uploadData.path);
+  return urlData?.publicUrl || null;
+}
+
 /* ─── SORT & FILTER ─────────────────────────────────── */
 function getSortedFiltered() {
-  let list = appState.filter === 'All'
-    ? [...appState.events]
-    : appState.events.filter(e => e.category === appState.filter);
-
-  // Apply search
+  let list = appState.filter === 'All' ? [...appState.events] : appState.events.filter(e => e.category === appState.filter);
   if (appState.searchQuery) {
     const q = appState.searchQuery.toLowerCase();
-    list = list.filter(e =>
-      e.title.toLowerCase().includes(q) ||
-      e.desc.toLowerCase().includes(q) ||
-      (e.speaker || '').toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q) ||
-      e.location.toLowerCase().includes(q)
-    );
+    list = list.filter(e => e.title.toLowerCase().includes(q) || e.desc.toLowerCase().includes(q) || (e.speaker || '').toLowerCase().includes(q) || e.category.toLowerCase().includes(q) || e.location.toLowerCase().includes(q));
   }
-
-  // Attach distance
   if (appState.userLat && appState.userLng) {
-    list = list.map(e => ({
-      ...e,
-      dist: (e.lat && e.lng) ? distKm(appState.userLat, appState.userLng, e.lat, e.lng) : 9999,
-    }));
+    list = list.map(e => ({ ...e, dist: (e.lat && e.lng) ? distKm(appState.userLat, appState.userLng, e.lat, e.lng) : 9999 }));
   }
-
-  // Sort
   switch (appState.sortBy) {
-    case 'distance':
-      list.sort((a, b) => (a.dist || 9999) - (b.dist || 9999));
-      break;
-    case 'popular':
-      list.sort((a, b) => (b.views || 0) - (a.views || 0));
-      break;
-    case 'newest':
-      list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      break;
+    case 'distance': list.sort((a, b) => (a.dist || 9999) - (b.dist || 9999)); break;
+    case 'popular': list.sort((a, b) => (b.views || 0) - (a.views || 0)); break;
+    case 'newest': list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); break;
     case 'trending':
-      // Trending = recent views weighted by recency
       list.sort((a, b) => {
-        const daysA = (Date.now() - new Date(a.dateISO)) / 86400000;
-        const daysB = (Date.now() - new Date(b.dateISO)) / 86400000;
-        const scoreA = (a.views || 0) / Math.max(1, daysA);
-        const scoreB = (b.views || 0) / Math.max(1, daysB);
+        const scoreA = (a.views || 0) / Math.max(1, (Date.now() - new Date(a.dateISO)) / 86400000);
+        const scoreB = (b.views || 0) / Math.max(1, (Date.now() - new Date(b.dateISO)) / 86400000);
         return scoreB - scoreA;
-      });
-      break;
-    case 'date':
-    default:
-      list.sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
-      break;
+      }); break;
+    default: list.sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO)); break;
   }
-
   return list;
 }
 
 function renderCards() {
   const grid = g('events-grid');
   const chipsEl = g('filter-chips');
-  const sortChips = document.querySelectorAll('.sort-chip');
-
-  // Update filter chips
   const cats = ['All', ...new Set(appState.events.map(e => e.category))];
-  if (chipsEl) {
-    chipsEl.innerHTML = cats.map(c =>
-      `<button class="chip${appState.filter === c ? ' active' : ''}" onclick="setFilter('${esc(c)}')">${esc(c)}</button>`
-    ).join('');
-  }
-
-  // Update sort chips
-  sortChips.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.sort === appState.sortBy);
-  });
-
+  if (chipsEl) chipsEl.innerHTML = cats.map(c => `<button class="chip${appState.filter === c ? ' active' : ''}" onclick="setFilter('${esc(c)}')">${esc(c)}</button>`).join('');
+  document.querySelectorAll('.sort-chip').forEach(btn => btn.classList.toggle('active', btn.dataset.sort === appState.sortBy));
   const list = getSortedFiltered();
-
   if (!grid) return;
-
-  if (!list.length) {
-    grid.innerHTML = `<div class="no-results"><p>${appState.searchQuery ? `No events matching "${esc(appState.searchQuery)}"` : 'No events found.'}</p></div>`;
-    return;
-  }
-
+  if (!list.length) { grid.innerHTML = `<div class="no-results"><p>${appState.searchQuery ? `No events matching "${esc(appState.searchQuery)}"` : 'No events found.'}</p></div>`; return; }
   grid.innerHTML = list.map((ev, i) => {
     const realIdx = appState.events.findIndex(x => String(x.id) === String(ev.id));
     const idx = realIdx >= 0 ? realIdx : i;
-
-    const distBadge = ev.dist && ev.dist < 9999
-      ? `<span class="tag tag-dist">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z', 10)} ${ev.dist < 1 ? (ev.dist * 1000).toFixed(0) + 'm' : ev.dist.toFixed(1) + 'km'}</span>`
-      : '';
-
-    const imgHTML = ev.poster_url
-      ? `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" loading="lazy">`
-      : `<div style="position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
-
+    const distBadge = ev.dist && ev.dist < 9999 ? `<span class="tag tag-dist">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z', 10)} ${ev.dist < 1 ? (ev.dist * 1000).toFixed(0) + 'm' : ev.dist.toFixed(1) + 'km'}</span>` : '';
+    const imgHTML = makeCardImageHTML(ev);
     return `<div class="ecard fu" style="animation-delay:${i * 0.03}s" onclick="openDetail(${idx})">
       <div class="ecard-img">${imgHTML}</div>
       <div class="ecard-body">
@@ -537,8 +636,6 @@ function renderCards() {
       </div>
     </div>`;
   }).join('');
-
-  // Update count
   const countEl = g('events-count');
   if (countEl) countEl.textContent = `${list.length} event${list.length !== 1 ? 's' : ''}`;
 }
@@ -547,32 +644,23 @@ function openDetail(idx) {
   const ev = appState.events[idx];
   if (!ev) return;
   appState.selectedEvent = ev;
-  // Increment view count (fire and forget)
   if (ev.dbId) sb.rpc('increment_view_count', { event_id: ev.dbId }).catch(() => {});
   go('detail', ev);
 }
 
 function setFilter(f) { appState.filter = f; renderCards(); }
 function setSort(s) { appState.sortBy = s; renderCards(); }
-
-function doSearch(val) {
-  appState.searchQuery = val.toLowerCase().trim();
-  renderCards();
-}
+function doSearch(val) { appState.searchQuery = val.toLowerCase().trim(); renderCards(); }
 
 /* ─── ROUTER ────────────────────────────────────────── */
 function go(p, data) {
   appState.page = p;
   if (data) appState.selectedEvent = data;
-
   document.querySelectorAll('.page-view').forEach(v => v.classList.remove('active'));
   g('page-' + p)?.classList.add('active');
   window.scrollTo(0, 0);
-
   document.querySelectorAll('.nav-links a').forEach(a => a.classList.toggle('active', a.dataset.page === p));
-  closeDrawer();
-  closeDropdown();
-
+  closeDrawer(); closeDropdown();
   if (p === 'home') { loadEvents(); return; }
   if (p === 'detail') { renderDetail(); return; }
   if (p === 'account') { if (!appState.authUser) { openModal('login'); return; } renderAccount(); return; }
@@ -585,26 +673,22 @@ function go(p, data) {
 async function renderDetail() {
   const ev = appState.selectedEvent;
   if (!ev) return;
-
   const el = g('detail-content');
   if (!el) return;
-
   el.innerHTML = `<div class="breadcrumb"><a href="#" onclick="go('home');return false">← Events</a> / <span>${esc(ev.title)}</span></div><div style="text-align:center;padding:40px;color:var(--ink3)">Loading…</div>`;
-
   let coList = [], crList = [];
   if (ev.dbId) {
     const [co, cr] = await Promise.all([
       sb.from('carpool_offers').select('*,users(full_name)').eq('event_id', ev.dbId),
       sb.from('carpool_requests').select('*,users(full_name)').eq('event_id', ev.dbId),
     ]);
-    coList = co.data || [];
-    crList = cr.data || [];
+    coList = co.data || []; crList = cr.data || [];
   }
-
+  const posX = `${((ev.focalX ?? 0.5) * 100).toFixed(1)}%`;
+  const posY = `${((ev.focalY ?? 0.5) * 100).toFixed(1)}%`;
   const posterHTML = ev.poster_url
-    ? `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" style="width:100%;display:block">`
+    ? `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" style="width:100%;display:block;object-fit:cover;object-position:${posX} ${posY}" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=detail-poster-ph>${makePosterSVG(ev).replace(/'/g,"\\'")} </div>')">`
     : `<div class="detail-poster-ph">${makePosterSVG(ev)}</div>`;
-
   el.innerHTML = `
     <div class="breadcrumb"><a href="#" onclick="go('home');return false">← Events</a> / <span>${esc(ev.title)}</span></div>
     <div class="detail-grid">
@@ -628,33 +712,21 @@ async function renderDetail() {
         <div class="accordion">
           ${ev.carpool ? `
           <div class="acc-item" id="acc-co">
-            <div class="acc-head" onclick="toggleAcc('co')">
-              ${icon('M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H3m9 6v-3m0 3h6m-6-3v-6m3 6V9m9 9v-6m0 6h-6m6 0h3.75m-3.75-6a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3 0h-6')}
-              Carpool offers (${coList.length})
-              ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}
-            </div>
+            <div class="acc-head" onclick="toggleAcc('co')">${icon('M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H3m9 6v-3m0 3h6m-6-3v-6m3 6V9m9 9v-6m0 6h-6m6 0h3.75m-3.75-6a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3 0h-6')} Carpool offers (${coList.length}) ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}</div>
             <div class="acc-body"><div class="acc-inner">
               ${coList.length ? coList.map(o => `<div class="carpool-entry"><strong>${esc(o.users?.full_name || 'Someone')}</strong> — ${o.seats_available} seat${o.seats_available > 1 ? 's' : ''} from ${esc(o.departure_location || 'TBD')}<br><span style="font-size:11px;color:var(--ink3)">${esc(o.notes || '')}</span></div>`).join('') : '<p style="color:var(--ink3)">No carpool offers yet.</p>'}
               ${appState.authUser ? `<button class="btn-secondary" style="margin-top:10px;width:100%" onclick="openCarpoolModal('offer','${esc(String(ev.dbId || ev.id))}')">+ Offer a ride</button>` : `<p style="font-size:12px;color:var(--ink3);margin-top:8px"><a href="#" onclick="openModal()" style="color:var(--red);font-weight:600">Sign in</a> to offer a ride</p>`}
             </div></div>
           </div>
           <div class="acc-item" id="acc-cr">
-            <div class="acc-head" onclick="toggleAcc('cr')">
-              ${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z')}
-              Carpool requests (${crList.length})
-              ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}
-            </div>
+            <div class="acc-head" onclick="toggleAcc('cr')">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z')} Carpool requests (${crList.length}) ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}</div>
             <div class="acc-body"><div class="acc-inner">
               ${crList.length ? crList.map(r => `<div class="carpool-entry"><strong>${esc(r.users?.full_name || 'Someone')}</strong> — from ${esc(r.pickup_location || 'TBD')}<br><span style="font-size:11px;color:var(--ink3)">${esc(r.notes || '')}</span></div>`).join('') : '<p style="color:var(--ink3)">No requests yet.</p>'}
               ${appState.authUser ? `<button class="btn-secondary" style="margin-top:10px;width:100%" onclick="openCarpoolModal('request','${esc(String(ev.dbId || ev.id))}')">+ Request a ride</button>` : `<p style="font-size:12px;color:var(--ink3);margin-top:8px"><a href="#" onclick="openModal()" style="color:var(--red);font-weight:600">Sign in</a> to request a ride</p>`}
             </div></div>
           </div>` : ''}
           <div class="acc-item" id="acc-ph">
-            <div class="acc-head" onclick="toggleAcc('ph')">
-              ${icon('M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z')}
-              Event photos
-              ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}
-            </div>
+            <div class="acc-head" onclick="toggleAcc('ph')">${icon('M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z')} Event photos ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}</div>
             <div class="acc-body"><div class="acc-inner" style="color:var(--ink3);font-size:13px">Photos are available to registered attendees only.</div></div>
           </div>
         </div>
@@ -666,15 +738,8 @@ async function doRSVP() {
   if (!appState.authUser) { openModal(); return; }
   const ev = appState.selectedEvent;
   if (!ev) { toast('No event selected.', 'err'); return; }
-  if (!ev.dbId || typeof ev.dbId === 'number') {
-    toast('Sign in and RSVP to real events from the homepage.', 'err');
-    return;
-  }
-  const { error } = await sb.from('registrations').insert({
-    event_id: ev.dbId,
-    user_id: appState.authUser.id,
-    status: 'pending',
-  });
+  if (!ev.dbId || typeof ev.dbId === 'number') { toast('Sign in and RSVP to real events from the homepage.', 'err'); return; }
+  const { error } = await sb.from('registrations').insert({ event_id: ev.dbId, user_id: appState.authUser.id, status: 'pending' });
   if (error?.code === '23505') toast("You're already registered!", 'err');
   else if (error) toast(error.message, 'err');
   else toast('Registered! Check your email for confirmation.', 'ok');
@@ -690,8 +755,7 @@ function shareEv() {
 function openCarpoolModal(type, evId) {
   const isOffer = type === 'offer';
   const el = document.createElement('div');
-  el.className = 'cp-overlay';
-  el.id = 'cp-overlay';
+  el.className = 'cp-overlay'; el.id = 'cp-overlay';
   el.innerHTML = `<div class="cp-modal">
     <div class="cp-head"><h3>${isOffer ? '🚗 Offer a ride' : '🙋 Request a ride'}</h3><button class="drawer-x" onclick="document.getElementById('cp-overlay').remove()">✕</button></div>
     <div class="cp-body">
@@ -735,10 +799,8 @@ async function renderAccount() {
   const pts = (pData || []).reduce((s, r) => s + r.amount, 0);
   const { data: tickets } = await sb.from('registrations').select('*,events(title,start_at,venue_name)').eq('user_id', appState.authUser.id).order('created_at', { ascending: false });
   const { data: myEvs } = await sb.from('events').select('*').eq('created_by', appState.authUser.id).order('created_at', { ascending: false });
-
   const el = g('account-content');
   if (!el) return;
-
   el.innerHTML = `
     <div class="acct-banner">
       <div class="acct-av">${initials}</div>
@@ -751,17 +813,11 @@ async function renderAccount() {
       <div class="atab${appState.acctTab === 'referrals' ? ' on' : ''}" onclick="switchAcctTab('referrals')">Points & referrals</div>
     </div>
     <div class="apanel${appState.acctTab === 'tickets' ? ' on' : ''}" id="ap-tickets">
-      ${(tickets || []).length
-        ? (tickets || []).map(r => `<div class="tcard"><div class="tcard-img">📅</div><div class="tcard-body"><div class="tcard-title">${esc(r.events?.title || 'Event')}</div><div class="tcard-meta">${r.events?.start_at ? new Date(r.events.start_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}${r.events?.venue_name ? '<br>' + esc(r.events.venue_name) : ''}</div></div><div class="tcard-side"><span class="status-pill ${esc(r.status)}">${esc(r.status)}</span></div></div>`).join('')
-        : `<div class="empty">${icon('M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a3 3 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z', 36)}<p>No tickets yet. <a href="#" onclick="go('home');return false" style="color:var(--red);font-weight:600">Browse events →</a></p></div>`
-      }
+      ${(tickets || []).length ? (tickets || []).map(r => `<div class="tcard"><div class="tcard-img">📅</div><div class="tcard-body"><div class="tcard-title">${esc(r.events?.title || 'Event')}</div><div class="tcard-meta">${r.events?.start_at ? new Date(r.events.start_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}${r.events?.venue_name ? '<br>' + esc(r.events.venue_name) : ''}</div></div><div class="tcard-side"><span class="status-pill ${esc(r.status)}">${esc(r.status)}</span></div></div>`).join('') : `<div class="empty">${icon('M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a3 3 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z', 36)}<p>No tickets yet. <a href="#" onclick="go('home');return false" style="color:var(--red);font-weight:600">Browse events →</a></p></div>`}
     </div>
     <div class="apanel${appState.acctTab === 'events' ? ' on' : ''}" id="ap-events">
       <div style="margin-bottom:14px"><button class="btn-save" onclick="go('create')">+ Create new event</button></div>
-      ${(myEvs || []).length
-        ? (myEvs || []).map(e => `<div class="tcard"><div class="tcard-img">📅</div><div class="tcard-body"><div class="tcard-title">${esc(e.title)}</div><div class="tcard-meta">${e.start_at ? new Date(e.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}<br><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${e.status === 'published' ? 'var(--green)' : 'var(--ink3)'}">${esc(e.status)}</span></div></div><div class="tcard-side"><button class="btn-view">Manage</button></div></div>`).join('')
-        : `<div class="empty"><p>No events created yet.</p></div>`
-      }
+      ${(myEvs || []).length ? (myEvs || []).map(e => `<div class="tcard"><div class="tcard-img">📅</div><div class="tcard-body"><div class="tcard-title">${esc(e.title)}</div><div class="tcard-meta">${e.start_at ? new Date(e.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}<br><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${e.status === 'published' ? 'var(--green)' : 'var(--ink3)'}">${esc(e.status)}</span></div></div><div class="tcard-side"><button class="btn-view">Manage</button></div></div>`).join('') : `<div class="empty"><p>No events created yet.</p></div>`}
     </div>
     <div class="apanel${appState.acctTab === 'referrals' ? ' on' : ''}" id="ap-referrals">
       <div class="ref-card">
@@ -781,24 +837,26 @@ async function renderAccount() {
 
 function switchAcctTab(t) { appState.acctTab = t; renderAccount(); }
 
-/* ─── CREATE EVENT — FIX: category resolving + poster upload + is_public ── */
+/* ─── CREATE EVENT ──────────────────────────────────── */
 async function renderCreate() {
-  // Load categories for the dropdown
   await loadCategories();
-
   const catOptions = appState.categories.length
     ? appState.categories.map(c => `<option value="${esc(String(c.id))}">${esc(c.name)}</option>`).join('')
-    : ['Workshop', 'Festival', 'Screening', 'Retreat', 'Music', 'Art', 'Culture', 'Networking', 'Other'].map(n => `<option value="">${n}</option>`).join('');
-
+    : ['Workshop','Festival','Screening','Retreat','Music','Art','Culture','Networking','Other'].map(n => `<option value="">${n}</option>`).join('');
   const el = g('create-content');
   if (!el) return;
-
   el.innerHTML = `
     <h1 class="form-title">Create an event</h1>
     <p class="form-sub">Fill in the details below to publish your event on Zeenle.</p>
     <div class="fsec">
       <div class="fsec-title">${icon('M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z')} Main information</div>
-      <div class="frow x1"><div class="ff"><label class="flabel">Event poster <span style="font-size:11px;font-weight:400;color:var(--ink3)">(image, max 5MB)</span></label><div class="upload-area" id="upload-area" onclick="document.getElementById('f-poster').click()">${icon('M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z', 22)}<p>Click to upload event poster</p><span>PNG, JPG, GIF — max 5MB</span><input id="f-poster" type="file" style="display:none" accept="image/*" onchange="posterPicked(this)"></div></div></div>
+      <div class="frow x1"><div class="ff"><label class="flabel">Event poster <span style="font-size:11px;font-weight:400;color:var(--ink3)">(image, max 10MB)</span></label>
+        <div class="upload-area" id="upload-area" onclick="document.getElementById('f-poster').click()">
+          ${icon('M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z', 22)}
+          <p>Click to upload event poster</p><span>PNG, JPG, GIF, WebP — max 10MB</span>
+          <input id="f-poster" type="file" style="display:none" accept="image/*" onchange="posterPicked(this)">
+        </div>
+      </div></div>
       <div class="frow"><div class="ff"><label class="flabel">Title <span class="req">*</span></label><input id="f-title" type="text" class="finput" placeholder="Event name" maxlength="120"></div><div class="ff"><label class="flabel">Category</label><select id="f-cat" class="fselect">${catOptions}</select></div></div>
       <div class="frow x1"><div class="ff"><label class="flabel">Description</label><textarea id="f-desc" class="ftextarea" placeholder="Tell attendees what this event is about…" maxlength="2000"></textarea></div></div>
       <div class="frow x3"><div class="ff"><label class="flabel">Start date & time <span class="req">*</span></label><input id="f-start" type="datetime-local" class="finput"></div><div class="ff"><label class="flabel">End date & time</label><input id="f-end" type="datetime-local" class="finput"></div><div class="ff"><label class="flabel">Doors open</label><input id="f-doors" type="datetime-local" class="finput"></div></div>
@@ -827,52 +885,23 @@ async function renderCreate() {
     </div>`;
 }
 
-function tgt(btn) {
-  btn.closest('.tgrp').querySelectorAll('.tbtn').forEach(b => b.classList.remove('on'));
-  btn.classList.add('on');
-}
+function tgt(btn) { btn.closest('.tgrp').querySelectorAll('.tbtn').forEach(b => b.classList.remove('on')); btn.classList.add('on'); }
 function toggleLang(l, btn) {
   if (appState.fLangs.includes(l)) { appState.fLangs = appState.fLangs.filter(x => x !== l); btn.classList.remove('on'); }
   else { appState.fLangs.push(l); btn.classList.add('on'); }
-}
-function posterPicked(inp) {
-  const f = inp.files[0];
-  if (!f) return;
-  if (f.size > 5 * 1024 * 1024) { toast('Image must be under 5MB.', 'err'); inp.value = ''; return; }
-  appState.fPosterFile = f;
-  const area = g('upload-area');
-  if (area) { area.innerHTML = `<p style="color:var(--green);font-weight:600;margin-bottom:3px">✓ ${esc(f.name)}</p><span>Click to change</span>`; area.onclick = () => g('f-poster').click(); }
 }
 
 async function submitEvent() {
   const title = v('f-title'), start = v('f-start');
   if (!title) { toast('Event title is required.', 'err'); return; }
   if (!start) { toast('Start date and time are required.', 'err'); return; }
-
   const btn = g('save-btn');
   setBtnLoad(btn, 'Publishing…');
-
-  // ── BUG FIX 3: resolve category_id from selected option ──
   const catSelect = g('f-cat');
   const categoryId = catSelect?.value && catSelect.value !== '' ? catSelect.value : null;
   const categoryName = catSelect?.options[catSelect.selectedIndex]?.text || 'Event';
-
-  // ── BUG FIX 4: upload poster to Supabase Storage if provided ──
-  let posterUrl = null;
-  if (appState.fPosterFile) {
-    const ext = appState.fPosterFile.name.split('.').pop();
-    const path = `events/${appState.authUser.id}/${Date.now()}.${ext}`;
-    const { data: uploadData, error: uploadErr } = await sb.storage
-      .from('posters')
-      .upload(path, appState.fPosterFile, { cacheControl: '3600', upsert: false });
-    if (!uploadErr && uploadData) {
-      const { data: urlData } = sb.storage.from('posters').getPublicUrl(uploadData.path);
-      posterUrl = urlData?.publicUrl || null;
-    }
-  }
-
-  // ── BUG FIX 5: always set is_public=true for new events unless user toggled it off ──
-  const { data: inserted, error } = await sb.from('events').insert({
+  const posterUrl = await uploadPosterIfNeeded();
+  const { error } = await sb.from('events').insert({
     created_by: appState.authUser.id,
     title: title.trim(),
     description: v('f-desc'),
@@ -892,7 +921,6 @@ async function submitEvent() {
     postal_code: v('f-postal'),
     contact_email: v('f-email'),
     speaker: v('f-speaker') || null,
-    // ── CRITICAL: set both is_public AND status ──
     is_public: appState.fPublic,
     status: 'published',
     needs_approval: appState.fApproval,
@@ -900,22 +928,17 @@ async function submitEvent() {
     allow_carpool: appState.fCarpool,
     languages: appState.fLangs,
     category_id: categoryId,
-    category_name: categoryName,  // Store text fallback for robustness
+    category_name: categoryName,
     poster_url: posterUrl,
+    focal_x: appState.fPosterFocalX ?? 0.5,
+    focal_y: appState.fPosterFocalY ?? 0.5,
     view_count: 0,
   }).select().single();
-
   setBtnLoad(btn, 'Publish event', false);
-
   if (error) { toast(error.message, 'err'); return; }
-
-  // Reset form state
-  appState.fLangs = [];
-  appState.fPublic = true;
-  appState.fPosterFile = null;
-
+  appState.fLangs = []; appState.fPublic = true; appState.fPosterFile = null;
+  appState.fPosterFocalX = 0.5; appState.fPosterFocalY = 0.5;
   toast('Event published!', 'ok');
-  // Reload events and navigate home
   await loadEvents();
   go('home');
 }
@@ -925,34 +948,18 @@ function renderAbout() {
   const el = g('about-content');
   if (!el) return;
   el.innerHTML = `
-    <div class="page-hero">
-      <h1>About Zeenle</h1>
-      <p>A community-first events platform built to connect people through meaningful experiences in the Greater Toronto Area.</p>
-    </div>
-    <div class="mission-card">
-      <h2>Our mission</h2>
-      <p>Zeenle was created with a simple belief: communities grow stronger when people come together. We make it easy to discover local events — workshops, cultural screenings, wellness retreats, festivals — and equally easy to organize them. Whether you're attending your first event or hosting your hundredth, Zeenle is your home base for community connection.</p>
-    </div>
+    <div class="page-hero"><h1>About Zeenle</h1><p>A community-first events platform built to connect people through meaningful experiences in the Greater Toronto Area.</p></div>
+    <div class="mission-card"><h2>Our mission</h2><p>Zeenle was created with a simple belief: communities grow stronger when people come together. We make it easy to discover local events — workshops, cultural screenings, wellness retreats, festivals — and equally easy to organize them.</p></div>
     <div class="values-grid">
       <div class="value-item"><div class="vi">🤝</div><h3>Community first</h3><p>Every feature we build starts with one question: does this help people connect?</p></div>
       <div class="value-item"><div class="vi">🌍</div><h3>Inclusive by design</h3><p>Events in multiple languages, accessible to everyone regardless of background.</p></div>
       <div class="value-item"><div class="vi">🌱</div><h3>Local impact</h3><p>Real communities, real neighbourhoods, and real relationships — not algorithms.</p></div>
     </div>
     <div class="content-grid">
-      <div class="content-card">
-        <h2>${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')} Our story</h2>
-        <p>Zeenle started as a solution to a problem we experienced firsthand — great events happening all around us, but no single place to find them. We built the platform we always wished existed.</p>
-        <p>Today, Zeenle hosts workshops, screenings, retreats, and festivals across the GTA, bringing people together every week.</p>
-      </div>
-      <div class="content-card">
-        <h2>${icon('M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z')} What we offer</h2>
-        <p>Free and paid event listing, RSVP and ticketing management, carpooling coordination, ZeePoints loyalty rewards, and a growing community directory.</p>
-        <p>Designed to be simple, fast, and genuinely useful.</p>
-      </div>
+      <div class="content-card"><h2>${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')} Our story</h2><p>Zeenle started as a solution to a problem we experienced firsthand — great events happening all around us, but no single place to find them.</p><p>Today, Zeenle hosts workshops, screenings, retreats, and festivals across the GTA.</p></div>
+      <div class="content-card"><h2>${icon('M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z')} What we offer</h2><p>Free and paid event listing, RSVP and ticketing management, carpooling coordination, ZeePoints loyalty rewards, and a growing community directory.</p></div>
     </div>
-    <div style="text-align:center;padding:16px 0">
-      <button class="btn-save" onclick="go('contact')">Get in touch →</button>
-    </div>`;
+    <div style="text-align:center;padding:16px 0"><button class="btn-save" onclick="go('contact')">Get in touch →</button></div>`;
 }
 
 /* ─── CONTACT ───────────────────────────────────────── */
@@ -960,10 +967,7 @@ function renderContact() {
   const el = g('contact-content');
   if (!el) return;
   el.innerHTML = `
-    <div class="page-hero">
-      <h1>Contact us</h1>
-      <p>Reach out for partnerships, event support, or just to say hello.</p>
-    </div>
+    <div class="page-hero"><h1>Contact us</h1><p>Reach out for partnerships, event support, or just to say hello.</p></div>
     <div class="contact-layout">
       <div>
         <div class="contact-details">
@@ -982,12 +986,7 @@ function renderContact() {
         </div>
       </div>
       <div class="ceo-card">
-        <div class="ceo-photo">
-          <div class="ceo-photo-placeholder">
-            ${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z', 56)}
-            <p>Founder photo</p>
-          </div>
-        </div>
+        <div class="ceo-photo"><div class="ceo-photo-placeholder">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z', 56)}<p>Founder photo</p></div></div>
         <div class="ceo-info">
           <h3>Mohammad Reza Irani</h3>
           <div class="ceo-title">Founder & CEO, Zeenle</div>
@@ -998,10 +997,7 @@ function renderContact() {
 }
 
 /* ─── MODAL / DRAWER / DROPDOWN ─────────────────────── */
-function openModal(tab = 'login') {
-  g('auth-modal').classList.add('open');
-  switchTab(tab);
-}
+function openModal(tab = 'login') { g('auth-modal').classList.add('open'); switchTab(tab); }
 function closeModal() { g('auth-modal').classList.remove('open'); }
 function switchTab(tab) {
   document.querySelectorAll('.mtab').forEach(t => t.classList.toggle('on', t.dataset.tab === tab));
@@ -1019,7 +1015,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await bootAuth();
   updateLocBar();
   await loadEvents();
-
   g('hamburger')?.addEventListener('click', openDrawer);
   g('overlay')?.addEventListener('click', closeDrawer);
   g('drawer-close-btn')?.addEventListener('click', closeDrawer);
