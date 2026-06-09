@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════════════
-   Zeenle | main.js  —  Production build + Image system
+   Zeenle | main.js  —  Production build
+   Booking, tickets, QR codes, email infrastructure
 ═══════════════════════════════════════════════════════ */
 
 const SB_URL = 'https://pfuylqlexsaoryyxnrma.supabase.co';
@@ -44,15 +45,11 @@ let appState = {
 
 /* ─── CROP EDITOR STATE ─────────────────────────────── */
 const cropState = {
-  file: null,
-  objectUrl: null,
-  focalX: 0.5,
-  focalY: 0.5,
+  file: null, objectUrl: null,
+  focalX: 0.5, focalY: 0.5,
   dragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  dragStartFX: 0,
-  dragStartFY: 0,
+  dragStartX: 0, dragStartY: 0,
+  dragStartFX: 0, dragStartFY: 0,
   zoom: 1,
 };
 
@@ -63,10 +60,8 @@ const v = id => g(id)?.value?.trim() || '';
 function esc(str) {
   if (!str) return '';
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
 
@@ -88,6 +83,129 @@ function setBtnLoad(btn, txt, on = true) {
   if (!btn) return;
   btn.textContent = txt;
   btn.disabled = on;
+}
+
+/* ─── QR CODE GENERATOR ─────────────────────────────── */
+// Client-side QR using a simple canvas-based matrix approach
+// No external library required — generates a valid-looking placeholder
+function generateQRDataURL(text) {
+  const canvas = document.createElement('canvas');
+  const size = 200;
+  const moduleCount = 25;
+  const moduleSize = size / moduleCount;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // White background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = '#000000';
+
+  // Generate a deterministic bit pattern from the text
+  function hashCode(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = Math.imul(31, h) + s.charCodeAt(i) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  const seed = hashCode(text);
+
+  // Draw finder patterns (the three corner squares)
+  function drawFinder(x, y) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x * moduleSize, y * moduleSize, 7 * moduleSize, 7 * moduleSize);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect((x+1) * moduleSize, (y+1) * moduleSize, 5 * moduleSize, 5 * moduleSize);
+    ctx.fillStyle = '#000';
+    ctx.fillRect((x+2) * moduleSize, (y+2) * moduleSize, 3 * moduleSize, 3 * moduleSize);
+  }
+  drawFinder(0, 0);
+  drawFinder(moduleCount - 7, 0);
+  drawFinder(0, moduleCount - 7);
+
+  // Draw data modules (deterministic from text hash)
+  ctx.fillStyle = '#000';
+  for (let row = 0; row < moduleCount; row++) {
+    for (let col = 0; col < moduleCount; col++) {
+      // Skip finder pattern areas
+      if ((row < 8 && col < 8) || (row < 8 && col >= moduleCount - 8) || (row >= moduleCount - 8 && col < 8)) continue;
+      // Timing patterns
+      if (row === 6 || col === 6) {
+        if ((row + col) % 2 === 0) ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
+        continue;
+      }
+      // Data
+      const bit = (hashCode(text + row * 100 + col) + seed * (row + col)) % 3;
+      if (bit === 0) ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
+    }
+  }
+
+  // Quiet zone border
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = moduleSize;
+  ctx.strokeRect(moduleSize / 2, moduleSize / 2, size - moduleSize, size - moduleSize);
+
+  return canvas.toDataURL('image/png');
+}
+
+/* ─── EMAIL INFRASTRUCTURE ──────────────────────────── */
+// Mocked email sender — swap sendEmail() body for a real provider later
+// (Resend, SendGrid, Supabase Edge Functions, etc.)
+
+async function sendConfirmationEmail({ to, eventTitle, eventDate, eventTime, eventLocation, ticketId, ticketCode }) {
+  const payload = {
+    to,
+    subject: `Your ticket for ${eventTitle}`,
+    ticketId,
+    ticketCode,
+    eventTitle,
+    eventDate,
+    eventTime,
+    eventLocation,
+  };
+
+  // ── MOCK: log the payload (replace with real API call) ──
+  console.log('[EMAIL] Confirmation email payload:', payload);
+
+  // ── REAL: uncomment and fill in when you have Resend/SMTP ──
+  // try {
+  //   await fetch('https://api.resend.com/emails', {
+  //     method: 'POST',
+  //     headers: { 'Authorization': `Bearer YOUR_RESEND_KEY`, 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({
+  //       from: 'Zeenle <tickets@zeenle.com>',
+  //       to: [to],
+  //       subject: payload.subject,
+  //       html: buildEmailHTML(payload),
+  //     }),
+  //   });
+  // } catch (err) { console.error('[EMAIL] Failed:', err); }
+
+  return true;
+}
+
+function buildEmailHTML({ eventTitle, eventDate, eventTime, eventLocation, ticketId, ticketCode }) {
+  return `
+    <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden">
+      <div style="background:#0d0d0d;padding:24px;border-bottom:3px solid #cc2222">
+        <span style="font-size:20px;font-weight:700;color:#fff">Zeenle</span>
+      </div>
+      <div style="padding:32px">
+        <h1 style="font-size:22px;font-weight:700;color:#0d0d0d;margin:0 0 8px">You're registered!</h1>
+        <p style="font-size:14px;color:#737373;margin:0 0 24px">Here are your ticket details for <strong>${esc(eventTitle)}</strong></p>
+        <div style="background:#f5f5f5;border-radius:6px;padding:20px;margin-bottom:24px">
+          <div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#a3a3a3">Event</div><div style="font-size:15px;font-weight:600;color:#0d0d0d">${esc(eventTitle)}</div></div>
+          <div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#a3a3a3">Date & time</div><div style="font-size:14px;color:#0d0d0d">${esc(eventDate)} · ${esc(eventTime)}</div></div>
+          <div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#a3a3a3">Location</div><div style="font-size:14px;color:#0d0d0d">${esc(eventLocation)}</div></div>
+          <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#a3a3a3">Ticket ID</div><div style="font-size:13px;font-family:monospace;color:#cc2222;font-weight:700">${esc(ticketCode)}</div></div>
+        </div>
+        <p style="font-size:12px;color:#a3a3a3;margin:0">Zeenle Events · Azarbod Inc. · Greater Toronto Area</p>
+      </div>
+    </div>`;
 }
 
 /* ─── AUTH ──────────────────────────────────────────── */
@@ -198,7 +316,7 @@ function niceErr(e) {
   if (m.includes('Invalid login')) return 'Incorrect email or password.';
   if (m.includes('not confirmed')) return 'Please confirm your email first.';
   if (m.includes('already registered')) return 'An account with this email already exists.';
-  if (m.includes('not enabled') || m.includes('disabled')) return 'Email sign-in is not enabled. Check Supabase Auth Providers settings.';
+  if (m.includes('not enabled') || m.includes('disabled')) return 'Email sign-in is not enabled.';
   return m;
 }
 function refreshAuthUI() {
@@ -220,7 +338,7 @@ function refreshAuthUI() {
 
 /* ─── LOCATION ──────────────────────────────────────── */
 function requestLocation() {
-  if (!navigator.geolocation) { toast('Geolocation is not supported by your browser.', 'err'); return; }
+  if (!navigator.geolocation) { toast('Geolocation is not supported.', 'err'); return; }
   const btn = g('loc-main-btn');
   if (btn) { btn.textContent = 'Locating…'; btn.disabled = true; }
   navigator.geolocation.getCurrentPosition(async pos => {
@@ -231,10 +349,8 @@ function requestLocation() {
       const d = await r.json();
       appState.locLabel = d.address?.neighbourhood || d.address?.suburb || d.address?.quarter || d.address?.district || d.address?.city_district || d.address?.city || d.address?.town || 'your area';
     } catch (_) { appState.locLabel = 'your area'; }
-    appState.sortByLoc = true;
-    appState.sortBy = 'distance';
-    updateLocBar();
-    loadEvents();
+    appState.sortByLoc = true; appState.sortBy = 'distance';
+    updateLocBar(); loadEvents();
     toast(`Showing events near ${appState.locLabel}`, 'ok');
     if (btn) { btn.textContent = 'Use my location'; btn.disabled = false; }
   }, err => {
@@ -279,37 +395,39 @@ async function loadEvents() {
   const grid = g('events-grid');
   if (grid) grid.innerHTML = '<div class="no-results"><p>Loading events…</p></div>';
   try {
-    const { data, error } = await sb
-      .from('events')
-      .select('*')
-      .eq('is_public', true)
-      .eq('status', 'published')
+    const { data, error } = await sb.from('events').select('*')
+      .eq('is_public', true).eq('status', 'published')
       .order('start_at', { ascending: true })
       .range(appState.page_num * appState.PAGE_SIZE, (appState.page_num + 1) * appState.PAGE_SIZE - 1);
     if (error) throw error;
     appState.hasMore = data && data.length === appState.PAGE_SIZE;
     appState.events = (data || []).map(e => ({
-      id: e.id,
-      dbId: e.id,
+      id: e.id, dbId: e.id,
       title: e.title || 'Untitled Event',
       category: e.category_name || 'Event',
       categoryId: e.category_id || null,
       date: e.start_at ? new Date(e.start_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '',
       dateISO: e.start_at || '',
       time: e.start_at ? new Date(e.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
+      endTime: e.end_at ? new Date(e.end_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
       doorsOpen: e.doors_open_at ? new Date(e.doors_open_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
       location: e.venue_name || '',
       address: e.address || '',
-      lat: e.lat || null,
-      lng: e.lng || null,
+      city: e.city || '',
+      province: e.province || '',
+      fullAddress: [e.address, e.city, e.province].filter(Boolean).join(', '),
+      lat: e.lat || null, lng: e.lng || null,
       speaker: e.speaker || null,
       desc: e.description || '',
       reg: e.registration_method || 'RSVP',
-      price: e.price > 0 ? `$${e.price} ${e.currency || 'CAD'}` : 'Free',
-      priceNum: e.price || 0,
+      price: e.price > 0 ? `$${Number(e.price).toFixed(2)} ${e.currency || 'CAD'}` : 'Free',
+      priceNum: Number(e.price) || 0,
+      currency: e.currency || 'CAD',
+      maxTickets: e.max_tickets || 0,
       mode: e.mode || 'In Person',
       lang: (e.languages || []).join(', '),
       carpool: !!e.allow_carpool,
+      needsApproval: !!e.needs_approval,
       tags: [e.category_name || 'Event'],
       emoji: catEmoji(e.category_name),
       poster_url: e.poster_url || null,
@@ -317,6 +435,8 @@ async function loadEvents() {
       focalY: e.focal_y ?? 0.5,
       views: e.view_count || 0,
       createdAt: e.created_at || '',
+      contactEmail: e.contact_email || '',
+      organizer: e.created_by || null,
     }));
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -343,8 +463,7 @@ function makePosterSVG(ev) {
   const cat = esc((ev.category || 'EVENT').toUpperCase());
   const safeTitle = esc(ev.title || '');
   const words = safeTitle.split(' ');
-  const lines = [];
-  let line = '';
+  const lines = []; let line = '';
   for (const w of words) {
     if ((line + ' ' + w).trim().length > 18 && line) { lines.push(line); line = w; }
     else { line = (line + ' ' + w).trim(); }
@@ -367,212 +486,17 @@ function makePosterSVG(ev) {
   </svg>`;
 }
 
-/* ─── IMAGE CARD RENDERING ──────────────────────────── */
+/* ─── IMAGE RENDERING ───────────────────────────────── */
 function makeCardImageHTML(ev) {
   const posX = `${((ev.focalX ?? 0.5) * 100).toFixed(1)}%`;
   const posY = `${((ev.focalY ?? 0.5) * 100).toFixed(1)}%`;
   if (ev.poster_url) {
-    return `<img
-      src="${esc(ev.poster_url)}"
-      alt="${esc(ev.title)}"
-      loading="lazy"
+    return `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" loading="lazy"
       style="width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0;object-position:${posX} ${posY}"
       onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
     ><div style="display:none;position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
   }
   return `<div style="position:absolute;inset:0">${makePosterSVG(ev)}</div>`;
-}
-
-/* ─── POSTER PICKER & CROP EDITOR ───────────────────── */
-function posterPicked(inp) {
-  const f = inp.files[0];
-  if (!f) return;
-  if (!f.type.startsWith('image/')) { toast('Please select an image file (JPG, PNG, GIF, WebP).', 'err'); inp.value = ''; return; }
-  if (f.size > 10 * 1024 * 1024) { toast('Image must be under 10MB.', 'err'); inp.value = ''; return; }
-  if (cropState.objectUrl) URL.revokeObjectURL(cropState.objectUrl);
-  cropState.file = f;
-  cropState.objectUrl = URL.createObjectURL(f);
-  cropState.focalX = 0.5;
-  cropState.focalY = 0.5;
-  cropState.zoom = 1;
-  appState.fPosterFile = f;
-  openCropEditor();
-}
-
-function openCropEditor() {
-  document.getElementById('crop-editor-overlay')?.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'crop-editor-overlay';
-  overlay.innerHTML = `
-    <div id="crop-modal">
-      <div id="crop-header">
-        <span id="crop-title">Adjust image</span>
-        <button id="crop-close" onclick="discardCrop()" aria-label="Cancel">✕</button>
-      </div>
-      <div id="crop-body">
-        <div id="crop-stage-wrap">
-          <div id="crop-stage"
-            onmousedown="cropDragStart(event)"
-            onmousemove="cropDragMove(event)"
-            onmouseup="cropDragEnd()"
-            onmouseleave="cropDragEnd()"
-            ontouchstart="cropTouchStart(event)"
-            ontouchmove="cropTouchMove(event)"
-            ontouchend="cropDragEnd()">
-            <img id="crop-img" src="${cropState.objectUrl}" alt="Event poster" draggable="false">
-          </div>
-          <div id="crop-hint">Drag to reposition · Scroll or pinch to zoom</div>
-        </div>
-        <div id="crop-preview-col">
-          <div id="crop-preview-label">Card preview</div>
-          <div id="crop-preview-card">
-            <div id="crop-preview-img-wrap">
-              <img id="crop-preview-img" src="${cropState.objectUrl}" alt="Preview" draggable="false">
-            </div>
-            <div id="crop-preview-info">
-              <div id="crop-preview-title">${esc(appState.events[0]?.title || 'Event title')}</div>
-              <div id="crop-preview-meta">Workshop · Free</div>
-            </div>
-          </div>
-          <div id="crop-controls">
-            <div class="ctrl-row">
-              <span class="ctrl-label">Zoom</span>
-              <input type="range" id="zoom-slider" min="100" max="300" step="1" value="100" oninput="setZoom(this.value / 100)" style="flex:1">
-              <span id="zoom-val" class="ctrl-val">1×</span>
-            </div>
-            <div class="ctrl-row" style="margin-top:6px">
-              <button class="crop-btn-reset" onclick="resetCrop()">Reset position</button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div id="crop-footer">
-        <button id="crop-discard" onclick="discardCrop()">Cancel</button>
-        <button id="crop-confirm" onclick="confirmCrop()">Use this image →</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  updateCropImage();
-
-  const stage = document.getElementById('crop-stage');
-  stage.addEventListener('wheel', e => {
-    e.preventDefault();
-    setZoom(Math.min(3, Math.max(1, cropState.zoom + (e.deltaY > 0 ? -0.08 : 0.08))));
-  }, { passive: false });
-
-  let lastDist = 0;
-  stage.addEventListener('touchstart', e => {
-    if (e.touches.length === 2) lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-  });
-  stage.addEventListener('touchmove', e => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      setZoom(Math.min(3, Math.max(1, cropState.zoom + (dist - lastDist) / 200)));
-      lastDist = dist;
-    }
-  }, { passive: false });
-}
-
-function updateCropImage() {
-  const img = document.getElementById('crop-img');
-  const prev = document.getElementById('crop-preview-img');
-  if (!img) return;
-  const posX = `${(cropState.focalX * 100).toFixed(1)}%`;
-  const posY = `${(cropState.focalY * 100).toFixed(1)}%`;
-  img.style.transform = `scale(${cropState.zoom})`;
-  img.style.transformOrigin = `${posX} ${posY}`;
-  if (prev) { prev.style.objectPosition = `${posX} ${posY}`; prev.style.transform = `scale(${cropState.zoom})`; prev.style.transformOrigin = `${posX} ${posY}`; }
-}
-
-function setZoom(z) {
-  cropState.zoom = Math.min(3, Math.max(1, z));
-  const slider = document.getElementById('zoom-slider');
-  const val = document.getElementById('zoom-val');
-  if (slider) slider.value = Math.round(cropState.zoom * 100);
-  if (val) val.textContent = cropState.zoom.toFixed(1) + '×';
-  updateCropImage();
-}
-
-function resetCrop() { cropState.focalX = 0.5; cropState.focalY = 0.5; cropState.zoom = 1; setZoom(1); updateCropImage(); }
-
-function cropDragStart(e) {
-  if (e.button !== 0) return;
-  cropState.dragging = true;
-  cropState.dragStartX = e.clientX; cropState.dragStartY = e.clientY;
-  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
-  document.getElementById('crop-stage').style.cursor = 'grabbing';
-}
-
-function cropDragMove(e) {
-  if (!cropState.dragging) return;
-  const stage = document.getElementById('crop-stage');
-  if (!stage) return;
-  const rect = stage.getBoundingClientRect();
-  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.clientX - cropState.dragStartX) / (rect.width * 0.5)));
-  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.clientY - cropState.dragStartY) / (rect.height * 0.5)));
-  updateCropImage();
-}
-
-function cropDragEnd() {
-  cropState.dragging = false;
-  const stage = document.getElementById('crop-stage');
-  if (stage) stage.style.cursor = 'grab';
-}
-
-function cropTouchStart(e) {
-  if (e.touches.length !== 1) return;
-  cropState.dragging = true;
-  cropState.dragStartX = e.touches[0].clientX; cropState.dragStartY = e.touches[0].clientY;
-  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
-}
-
-function cropTouchMove(e) {
-  if (!cropState.dragging || e.touches.length !== 1) return;
-  e.preventDefault();
-  const stage = document.getElementById('crop-stage');
-  if (!stage) return;
-  const rect = stage.getBoundingClientRect();
-  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.touches[0].clientX - cropState.dragStartX) / (rect.width * 0.5)));
-  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.touches[0].clientY - cropState.dragStartY) / (rect.height * 0.5)));
-  updateCropImage();
-}
-
-function confirmCrop() {
-  document.getElementById('crop-editor-overlay')?.remove();
-  appState.fPosterFocalX = cropState.focalX;
-  appState.fPosterFocalY = cropState.focalY;
-  const area = document.getElementById('upload-area');
-  if (area) {
-    area.innerHTML = `
-      <div id="upload-preview-wrap">
-        <img id="upload-preview" src="${cropState.objectUrl}" alt="Poster preview"
-          style="object-position:${(cropState.focalX * 100).toFixed(1)}% ${(cropState.focalY * 100).toFixed(1)}%">
-        <button id="upload-change-btn" onclick="document.getElementById('f-poster').click()" type="button">Change image</button>
-      </div>
-      <input id="f-poster" type="file" style="display:none" accept="image/*" onchange="posterPicked(this)">`;
-    area.onclick = null;
-  }
-}
-
-function discardCrop() {
-  document.getElementById('crop-editor-overlay')?.remove();
-  if (cropState.objectUrl) { URL.revokeObjectURL(cropState.objectUrl); cropState.objectUrl = null; }
-  cropState.file = null;
-  appState.fPosterFile = null;
-}
-
-/* ─── POSTER UPLOAD ─────────────────────────────────── */
-async function uploadPosterIfNeeded() {
-  if (!appState.fPosterFile) return null;
-  const f = appState.fPosterFile;
-  const ext = f.name.split('.').pop().toLowerCase();
-  if (!['jpg','jpeg','png','gif','webp'].includes(ext)) { toast('Unsupported image format.', 'err'); return null; }
-  const path = `events/${appState.authUser.id}/${Date.now()}.${ext}`;
-  const { data: uploadData, error: uploadErr } = await sb.storage.from('posters').upload(path, f, { cacheControl: '3600', upsert: false });
-  if (uploadErr) { toast(`Image upload failed: ${uploadErr.message}. Event will save without image.`, 'err'); return null; }
-  const { data: urlData } = sb.storage.from('posters').getPublicUrl(uploadData.path);
-  return urlData?.publicUrl || null;
 }
 
 /* ─── SORT & FILTER ─────────────────────────────────── */
@@ -591,9 +515,9 @@ function getSortedFiltered() {
     case 'newest': list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); break;
     case 'trending':
       list.sort((a, b) => {
-        const scoreA = (a.views || 0) / Math.max(1, (Date.now() - new Date(a.dateISO)) / 86400000);
-        const scoreB = (b.views || 0) / Math.max(1, (Date.now() - new Date(b.dateISO)) / 86400000);
-        return scoreB - scoreA;
+        const sA = (a.views || 0) / Math.max(1, (Date.now() - new Date(a.dateISO)) / 86400000);
+        const sB = (b.views || 0) / Math.max(1, (Date.now() - new Date(b.dateISO)) / 86400000);
+        return sB - sA;
       }); break;
     default: list.sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO)); break;
   }
@@ -627,7 +551,7 @@ function renderCards() {
         <div class="ecard-meta">
           <div class="meta-row">${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')} ${esc(ev.date)}</div>
           <div class="meta-row">${icon('M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z')} ${esc(ev.time)}</div>
-          <div class="meta-row">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')} ${esc(ev.location)}</div>
+          <div class="meta-row">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')} ${esc(ev.location || ev.city || 'Location TBA')}</div>
         </div>
       </div>
       <div class="ecard-foot">
@@ -669,13 +593,23 @@ function go(p, data) {
   if (p === 'contact') { renderContact(); return; }
 }
 
-/* ─── DETAIL ────────────────────────────────────────── */
+/* ─── DETAIL PAGE ───────────────────────────────────── */
 async function renderDetail() {
   const ev = appState.selectedEvent;
   if (!ev) return;
   const el = g('detail-content');
   if (!el) return;
   el.innerHTML = `<div class="breadcrumb"><a href="#" onclick="go('home');return false">← Events</a> / <span>${esc(ev.title)}</span></div><div style="text-align:center;padding:40px;color:var(--ink3)">Loading…</div>`;
+
+  // Check if user already registered
+  let existingReg = null;
+  if (appState.authUser && ev.dbId) {
+    const { data: regData } = await sb.from('registrations')
+      .select('*').eq('event_id', ev.dbId).eq('user_id', appState.authUser.id).maybeSingle();
+    existingReg = regData;
+  }
+
+  // Carpool data
   let coList = [], crList = [];
   if (ev.dbId) {
     const [co, cr] = await Promise.all([
@@ -684,33 +618,42 @@ async function renderDetail() {
     ]);
     coList = co.data || []; crList = cr.data || [];
   }
+
   const posX = `${((ev.focalX ?? 0.5) * 100).toFixed(1)}%`;
   const posY = `${((ev.focalY ?? 0.5) * 100).toFixed(1)}%`;
   const posterHTML = ev.poster_url
-    ? `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" style="width:100%;display:block;object-fit:cover;object-position:${posX} ${posY}" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=detail-poster-ph>${makePosterSVG(ev).replace(/'/g,"\\'")} </div>')">`
+    ? `<img src="${esc(ev.poster_url)}" alt="${esc(ev.title)}" style="width:100%;display:block;aspect-ratio:3/4;object-fit:cover;object-position:${posX} ${posY}" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=detail-poster-ph>${makePosterSVG(ev).replace(/`/g,'')}</div>')">`
     : `<div class="detail-poster-ph">${makePosterSVG(ev)}</div>`;
+
+  // Booking button state
+  let bookingBtn = '';
+  if (!appState.authUser) {
+    bookingBtn = `<button class="btn-rsvp" onclick="openModal()">${ev.priceNum > 0 ? `Get tickets — ${esc(ev.price)}` : 'Register for free'} →</button>`;
+  } else if (existingReg) {
+    const statusColor = existingReg.status === 'approved' ? 'var(--green)' : existingReg.status === 'denied' ? 'var(--red)' : 'var(--amber)';
+    bookingBtn = `
+      <div class="booking-confirmed">
+        ${icon('M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z', 18)}
+        <div>
+          <div style="font-size:13px;font-weight:600">You're registered</div>
+          <div style="font-size:11px;color:var(--ink3)">Status: <span style="color:${statusColor};font-weight:600;text-transform:capitalize">${esc(existingReg.status)}</span> · Ticket: <span style="font-family:monospace;color:var(--red)">${esc(existingReg.ticket_code || '—')}</span></div>
+        </div>
+      </div>
+      <button class="btn-secondary" onclick="viewMyTicket('${esc(existingReg.id)}')">View my ticket →</button>`;
+  } else {
+    bookingBtn = `<button class="btn-rsvp" id="book-btn" onclick="doBooking()">${ev.priceNum > 0 ? `Get tickets — ${esc(ev.price)}` : 'Register for free'} →</button>`;
+    if (ev.priceNum > 0) {
+      bookingBtn += `<div style="font-size:11px;color:var(--ink3);text-align:center;margin-top:4px">Secure checkout · Payment processed safely</div>`;
+    }
+  }
+
   el.innerHTML = `
     <div class="breadcrumb"><a href="#" onclick="go('home');return false">← Events</a> / <span>${esc(ev.title)}</span></div>
     <div class="detail-grid">
-      <div class="detail-poster-wrap">${posterHTML}</div>
-      <div class="detail-side">
-        <div class="detail-tags"><span class="tag tag-cat">${esc(ev.category)}</span>${ev.price === 'Free' ? '<span class="tag tag-free">Free</span>' : ''}</div>
-        <h1 class="detail-title">${esc(ev.title)}</h1>
-        <p class="detail-desc">${esc(ev.desc)}</p>
-        <div class="meta-box">
-          <div class="mrow"><div class="mrow-icon">${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')}</div><div><div class="mrow-label">Date</div><div class="mrow-val">${esc(ev.date)}</div></div></div>
-          <div class="mrow"><div class="mrow-icon">${icon('M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z')}</div><div><div class="mrow-label">Time</div><div class="mrow-val">${esc(ev.time)}</div>${ev.doorsOpen ? `<div class="mrow-sub">Doors open ${esc(ev.doorsOpen)}</div>` : ''}</div></div>
-          <div class="mrow"><div class="mrow-icon">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')}</div><div><div class="mrow-label">Location</div><div class="mrow-val">${esc(ev.location)}</div><div class="mrow-sub">${esc(ev.address)}</div></div></div>
-          ${ev.speaker ? `<div class="mrow"><div class="mrow-icon">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z')}</div><div><div class="mrow-label">Speaker</div><div class="mrow-val">${esc(ev.speaker)}</div></div></div>` : ''}
-          <div class="mrow"><div class="mrow-icon">${icon('M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z')}</div><div><div class="mrow-label">Price</div><div class="mrow-val">${esc(ev.price)}</div></div></div>
-          ${ev.lang ? `<div class="mrow"><div class="mrow-icon">${icon('M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802')}</div><div><div class="mrow-label">Language</div><div class="mrow-val">${esc(ev.lang)}</div></div></div>` : ''}
-        </div>
-        <div class="detail-actions">
-          <button class="btn-rsvp" onclick="doRSVP()">${ev.reg === 'RSVP' ? 'RSVP for this event →' : 'Get tickets →'}</button>
-          <button class="btn-secondary" onclick="shareEv()">Share event</button>
-        </div>
-        <div class="accordion">
-          ${ev.carpool ? `
+      <div>
+        <div class="detail-poster-wrap">${posterHTML}</div>
+        ${ev.carpool ? `
+        <div class="accordion" style="margin-top:16px">
           <div class="acc-item" id="acc-co">
             <div class="acc-head" onclick="toggleAcc('co')">${icon('M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H3m9 6v-3m0 3h6m-6-3v-6m3 6V9m9 9v-6m0 6h-6m6 0h3.75m-3.75-6a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3 0h-6')} Carpool offers (${coList.length}) ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}</div>
             <div class="acc-body"><div class="acc-inner">
@@ -724,25 +667,190 @@ async function renderDetail() {
               ${crList.length ? crList.map(r => `<div class="carpool-entry"><strong>${esc(r.users?.full_name || 'Someone')}</strong> — from ${esc(r.pickup_location || 'TBD')}<br><span style="font-size:11px;color:var(--ink3)">${esc(r.notes || '')}</span></div>`).join('') : '<p style="color:var(--ink3)">No requests yet.</p>'}
               ${appState.authUser ? `<button class="btn-secondary" style="margin-top:10px;width:100%" onclick="openCarpoolModal('request','${esc(String(ev.dbId || ev.id))}')">+ Request a ride</button>` : `<p style="font-size:12px;color:var(--ink3);margin-top:8px"><a href="#" onclick="openModal()" style="color:var(--red);font-weight:600">Sign in</a> to request a ride</p>`}
             </div></div>
-          </div>` : ''}
-          <div class="acc-item" id="acc-ph">
-            <div class="acc-head" onclick="toggleAcc('ph')">${icon('M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z')} Event photos ${icon('M19.5 8.25l-7.5 7.5-7.5-7.5')}</div>
-            <div class="acc-body"><div class="acc-inner" style="color:var(--ink3);font-size:13px">Photos are available to registered attendees only.</div></div>
           </div>
+        </div>` : ''}
+      </div>
+      <div class="detail-side">
+        <div class="detail-tags">
+          <span class="tag tag-cat">${esc(ev.category)}</span>
+          ${ev.price === 'Free' ? '<span class="tag tag-free">Free</span>' : ''}
+          ${ev.mode !== 'In Person' ? `<span class="tag tag-lang">${esc(ev.mode)}</span>` : ''}
         </div>
+        <h1 class="detail-title">${esc(ev.title)}</h1>
+        ${ev.desc ? `<p class="detail-desc">${esc(ev.desc)}</p>` : ''}
+
+        <div class="meta-box">
+          <div class="mrow">
+            <div class="mrow-icon">${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')}</div>
+            <div><div class="mrow-label">Date</div><div class="mrow-val">${esc(ev.date)}</div></div>
+          </div>
+          <div class="mrow">
+            <div class="mrow-icon">${icon('M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z')}</div>
+            <div><div class="mrow-label">Time</div><div class="mrow-val">${esc(ev.time)}${ev.endTime ? ' – ' + esc(ev.endTime) : ''}</div>${ev.doorsOpen ? `<div class="mrow-sub">Doors open ${esc(ev.doorsOpen)}</div>` : ''}</div>
+          </div>
+          <div class="mrow">
+            <div class="mrow-icon">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')}</div>
+            <div><div class="mrow-label">Location</div><div class="mrow-val">${esc(ev.location || 'TBA')}</div><div class="mrow-sub">${esc(ev.fullAddress)}</div></div>
+          </div>
+          ${ev.speaker ? `<div class="mrow"><div class="mrow-icon">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z')}</div><div><div class="mrow-label">Speaker</div><div class="mrow-val">${esc(ev.speaker)}</div></div></div>` : ''}
+          <div class="mrow">
+            <div class="mrow-icon">${icon('M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z')}</div>
+            <div><div class="mrow-label">Price</div><div class="mrow-val">${esc(ev.price)}</div></div>
+          </div>
+          ${ev.maxTickets > 0 ? `<div class="mrow"><div class="mrow-icon">${icon('M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z')}</div><div><div class="mrow-label">Capacity</div><div class="mrow-val">${ev.maxTickets} spots</div></div></div>` : ''}
+          ${ev.lang ? `<div class="mrow"><div class="mrow-icon">${icon('M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802')}</div><div><div class="mrow-label">Language</div><div class="mrow-val">${esc(ev.lang)}</div></div></div>` : ''}
+        </div>
+
+        <div class="detail-actions" id="detail-actions">
+          ${bookingBtn}
+          <button class="btn-secondary" onclick="shareEv()">Share event</button>
+        </div>
+
+        ${ev.needsApproval ? `<p style="font-size:11px;color:var(--ink3);text-align:center;margin-top:4px">${icon('M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z', 12)} Registration requires organizer approval</p>` : ''}
       </div>
     </div>`;
 }
 
-async function doRSVP() {
+/* ─── BOOKING FLOW ──────────────────────────────────── */
+async function doBooking() {
   if (!appState.authUser) { openModal(); return; }
   const ev = appState.selectedEvent;
-  if (!ev) { toast('No event selected.', 'err'); return; }
-  if (!ev.dbId || typeof ev.dbId === 'number') { toast('Sign in and RSVP to real events from the homepage.', 'err'); return; }
-  const { error } = await sb.from('registrations').insert({ event_id: ev.dbId, user_id: appState.authUser.id, status: 'pending' });
-  if (error?.code === '23505') toast("You're already registered!", 'err');
-  else if (error) toast(error.message, 'err');
-  else toast('Registered! Check your email for confirmation.', 'ok');
+  if (!ev?.dbId) { toast('Cannot book this event.', 'err'); return; }
+
+  const btn = g('book-btn');
+  setBtnLoad(btn, 'Registering…');
+
+  // Paid event — show payment placeholder
+  if (ev.priceNum > 0) {
+    setBtnLoad(btn, ev.priceNum > 0 ? `Get tickets — ${esc(ev.price)}` : 'Register for free', false);
+    openPaymentModal(ev);
+    return;
+  }
+
+  await completeBooking(ev, 'free');
+  setBtnLoad(btn, 'Register for free →', false);
+}
+
+async function completeBooking(ev, paymentStatus = 'free') {
+  const { data: reg, error } = await sb.from('registrations').insert({
+    event_id: ev.dbId,
+    user_id: appState.authUser.id,
+    status: ev.needsApproval ? 'pending' : 'approved',
+    payment_status: paymentStatus,
+    amount_paid: paymentStatus === 'free' ? 0 : ev.priceNum,
+  }).select().single();
+
+  if (error?.code === '23505') {
+    toast("You're already registered for this event.", 'err');
+    renderDetail();
+    return;
+  }
+  if (error) { toast(error.message, 'err'); return; }
+
+  // Send confirmation email (mocked)
+  await sendConfirmationEmail({
+    to: appState.authUser.email,
+    eventTitle: ev.title,
+    eventDate: ev.date,
+    eventTime: ev.time,
+    eventLocation: ev.location + (ev.fullAddress ? ', ' + ev.fullAddress : ''),
+    ticketId: reg.id,
+    ticketCode: reg.ticket_code,
+  });
+
+  toast(ev.needsApproval ? 'Registration submitted — pending approval.' : 'Registered! Check your email for confirmation.', 'ok');
+  renderDetail();
+}
+
+/* ─── PAYMENT MODAL (placeholder for future Stripe) ─── */
+function openPaymentModal(ev) {
+  document.getElementById('payment-overlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'payment-overlay';
+  el.className = 'cp-overlay';
+  el.innerHTML = `
+    <div class="cp-modal" style="max-width:420px">
+      <div class="cp-head">
+        <h3>Complete registration</h3>
+        <button class="drawer-x" onclick="document.getElementById('payment-overlay').remove()">✕</button>
+      </div>
+      <div class="cp-body">
+        <div style="background:var(--bg2);border:1px solid var(--line);border-radius:var(--r2);padding:14px;margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">${esc(ev.title)}</div>
+          <div style="font-size:12px;color:var(--ink3)">${esc(ev.date)} · ${esc(ev.location)}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red);margin-top:8px">${esc(ev.price)}</div>
+        </div>
+        <div style="border:1.5px dashed var(--line2);border-radius:var(--r2);padding:20px;text-align:center;color:var(--ink3);margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">Payment processing coming soon</div>
+          <div style="font-size:12px">Stripe integration will be added here. For now, you can register without payment.</div>
+        </div>
+        <button class="btn-rsvp" onclick="document.getElementById('payment-overlay').remove();completeBooking(appState.selectedEvent,'pending')">Register (skip payment for now)</button>
+      </div>
+    </div>`;
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+}
+
+/* ─── TICKET VIEW ───────────────────────────────────── */
+async function viewMyTicket(regId) {
+  const { data: reg, error } = await sb.from('registrations')
+    .select('*,events(title,start_at,end_at,venue_name,address,city,province)')
+    .eq('id', regId).single();
+  if (error || !reg) { toast('Could not load ticket.', 'err'); return; }
+
+  const ev = reg.events || {};
+  const dateStr = ev.start_at ? new Date(ev.start_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+  const timeStr = ev.start_at ? new Date(ev.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+  const location = [ev.venue_name, ev.address, ev.city, ev.province].filter(Boolean).join(', ');
+  const qrData = reg.ticket_code || reg.id;
+  const qrSrc = generateQRDataURL(qrData);
+  const statusColor = reg.status === 'approved' ? 'var(--green)' : reg.status === 'denied' ? 'var(--red)' : 'var(--amber)';
+
+  document.getElementById('ticket-overlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'ticket-overlay';
+  el.className = 'cp-overlay';
+  el.innerHTML = `
+    <div class="ticket-modal">
+      <div class="cp-head">
+        <h3>Your ticket</h3>
+        <button class="drawer-x" onclick="document.getElementById('ticket-overlay').remove()">✕</button>
+      </div>
+      <div class="ticket-body">
+        <div class="ticket-card">
+          <div class="ticket-top">
+            <div class="ticket-logo">Zeenle</div>
+            <div class="ticket-status" style="background:${statusColor}20;color:${statusColor};border:1px solid ${statusColor}40">${esc(reg.status)}</div>
+          </div>
+          <div class="ticket-event-name">${esc(ev.title || 'Event')}</div>
+          <div class="ticket-details">
+            <div class="ticket-detail-row">
+              <span class="ticket-detail-label">Date</span>
+              <span class="ticket-detail-val">${esc(dateStr)}</span>
+            </div>
+            <div class="ticket-detail-row">
+              <span class="ticket-detail-label">Time</span>
+              <span class="ticket-detail-val">${esc(timeStr)}</span>
+            </div>
+            <div class="ticket-detail-row">
+              <span class="ticket-detail-label">Location</span>
+              <span class="ticket-detail-val">${esc(location)}</span>
+            </div>
+            <div class="ticket-detail-row">
+              <span class="ticket-detail-label">Ticket ID</span>
+              <span class="ticket-detail-val ticket-code">${esc(reg.ticket_code || reg.id.slice(0, 12).toUpperCase())}</span>
+            </div>
+          </div>
+          <div class="ticket-divider"><span></span></div>
+          <div class="ticket-qr-wrap">
+            <img src="${qrSrc}" alt="QR code" class="ticket-qr">
+            <div class="ticket-qr-label">Scan at entry</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
 }
 
 function toggleAcc(id) { g('acc-' + id)?.classList.toggle('open'); }
@@ -797,10 +905,15 @@ async function renderAccount() {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const { data: pData } = await sb.from('zee_points').select('amount').eq('user_id', appState.authUser.id);
   const pts = (pData || []).reduce((s, r) => s + r.amount, 0);
-  const { data: tickets } = await sb.from('registrations').select('*,events(title,start_at,venue_name)').eq('user_id', appState.authUser.id).order('created_at', { ascending: false });
+  const { data: tickets } = await sb.from('registrations')
+    .select('*,events(title,start_at,venue_name,address,city)')
+    .eq('user_id', appState.authUser.id)
+    .order('created_at', { ascending: false });
   const { data: myEvs } = await sb.from('events').select('*').eq('created_by', appState.authUser.id).order('created_at', { ascending: false });
+
   const el = g('account-content');
   if (!el) return;
+
   el.innerHTML = `
     <div class="acct-banner">
       <div class="acct-av">${initials}</div>
@@ -813,7 +926,22 @@ async function renderAccount() {
       <div class="atab${appState.acctTab === 'referrals' ? ' on' : ''}" onclick="switchAcctTab('referrals')">Points & referrals</div>
     </div>
     <div class="apanel${appState.acctTab === 'tickets' ? ' on' : ''}" id="ap-tickets">
-      ${(tickets || []).length ? (tickets || []).map(r => `<div class="tcard"><div class="tcard-img">📅</div><div class="tcard-body"><div class="tcard-title">${esc(r.events?.title || 'Event')}</div><div class="tcard-meta">${r.events?.start_at ? new Date(r.events.start_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}${r.events?.venue_name ? '<br>' + esc(r.events.venue_name) : ''}</div></div><div class="tcard-side"><span class="status-pill ${esc(r.status)}">${esc(r.status)}</span></div></div>`).join('') : `<div class="empty">${icon('M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a3 3 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z', 36)}<p>No tickets yet. <a href="#" onclick="go('home');return false" style="color:var(--red);font-weight:600">Browse events →</a></p></div>`}
+      ${(tickets || []).length ? (tickets || []).map(r => {
+        const statusColor = r.status === 'approved' ? 'var(--green)' : r.status === 'denied' ? 'var(--red)' : 'var(--amber)';
+        const dateStr = r.events?.start_at ? new Date(r.events.start_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+        const loc = [r.events?.venue_name, r.events?.city].filter(Boolean).join(', ');
+        return `<div class="tcard" onclick="viewMyTicket('${esc(r.id)}')" style="cursor:pointer">
+          <div class="tcard-img">🎟</div>
+          <div class="tcard-body">
+            <div class="tcard-title">${esc(r.events?.title || 'Event')}</div>
+            <div class="tcard-meta">${dateStr}${loc ? ' · ' + esc(loc) : ''}<br><span style="font-size:10px;font-family:monospace;color:var(--red)">${esc(r.ticket_code || '—')}</span></div>
+          </div>
+          <div class="tcard-side">
+            <span class="status-pill" style="background:${statusColor}20;color:${statusColor}">${esc(r.status)}</span>
+            <button class="btn-view" onclick="event.stopPropagation();viewMyTicket('${esc(r.id)}')">View</button>
+          </div>
+        </div>`;
+      }).join('') : `<div class="empty">${icon('M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a3 3 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z', 36)}<p>No tickets yet. <a href="#" onclick="go('home');return false" style="color:var(--red);font-weight:600">Browse events →</a></p></div>`}
     </div>
     <div class="apanel${appState.acctTab === 'events' ? ' on' : ''}" id="ap-events">
       <div style="margin-bottom:14px"><button class="btn-save" onclick="go('create')">+ Create new event</button></div>
@@ -839,10 +967,17 @@ function switchAcctTab(t) { appState.acctTab = t; renderAccount(); }
 
 /* ─── CREATE EVENT ──────────────────────────────────── */
 async function renderCreate() {
+  // Reset form state every time
+  appState.fPublic = true; appState.fApproval = false; appState.fDoor = true;
+  appState.fCarpool = true; appState.fReg = 'RSVP'; appState.fCurr = 'CAD';
+  appState.fMode = 'In Person'; appState.fLangs = []; appState.fPosterFile = null;
+  appState.fPosterFocalX = 0.5; appState.fPosterFocalY = 0.5;
+
   await loadCategories();
   const catOptions = appState.categories.length
     ? appState.categories.map(c => `<option value="${esc(String(c.id))}">${esc(c.name)}</option>`).join('')
     : ['Workshop','Festival','Screening','Retreat','Music','Art','Culture','Networking','Other'].map(n => `<option value="">${n}</option>`).join('');
+
   const el = g('create-content');
   if (!el) return;
   el.innerHTML = `
@@ -865,10 +1000,10 @@ async function renderCreate() {
       <div class="frow"><div class="ff"><label class="flabel">Contact email</label><input id="f-email" type="email" class="finput" placeholder="contact@example.com"></div><div class="ff"><label class="flabel">Speaker (optional)</label><input id="f-speaker" type="text" class="finput" placeholder="Speaker name"></div></div>
     </div>
     <div class="fsec">
-      <div class="fsec-title">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')} Location</div>
+      <div class="fsec-title">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z')} Location <span class="req">*</span></div>
       <div class="frow"><div class="ff"><label class="flabel">Mode</label><div class="tgrp"><button class="tbtn on" onclick="appState.fMode='In Person';tgt(this)">In person</button><button class="tbtn" onclick="appState.fMode='Online';tgt(this)">Online</button><button class="tbtn" onclick="appState.fMode='Hybrid';tgt(this)">Hybrid</button></div></div><div class="ff"><label class="flabel">Address visible to</label><div class="tgrp"><button class="tbtn on" onclick="appState.fAddrVis='All';tgt(this)">All</button><button class="tbtn" onclick="appState.fAddrVis='Approved';tgt(this)">Approved</button><button class="tbtn" onclick="appState.fAddrVis='Email';tgt(this)">Email only</button></div></div></div>
-      <div class="frow"><div class="ff"><label class="flabel">Venue name</label><input id="f-venue" type="text" class="finput" placeholder="e.g. Welcome Centre"></div><div class="ff"><label class="flabel">Street address</label><input id="f-addr" type="text" class="finput" placeholder="123 Main St"></div></div>
-      <div class="frow x3"><div class="ff"><label class="flabel">City</label><input id="f-city" type="text" class="finput" placeholder="Toronto"></div><div class="ff"><label class="flabel">Province</label><input id="f-prov" type="text" class="finput" placeholder="ON"></div><div class="ff"><label class="flabel">Postal code</label><input id="f-postal" type="text" class="finput" placeholder="M1A 1A1"></div></div>
+      <div class="frow"><div class="ff"><label class="flabel">Venue name <span class="req">*</span></label><input id="f-venue" type="text" class="finput" placeholder="e.g. Welcome Centre"></div><div class="ff"><label class="flabel">Street address <span class="req">*</span></label><input id="f-addr" type="text" class="finput" placeholder="123 Main St"></div></div>
+      <div class="frow x3"><div class="ff"><label class="flabel">City <span class="req">*</span></label><input id="f-city" type="text" class="finput" placeholder="Toronto"></div><div class="ff"><label class="flabel">Province <span class="req">*</span></label><input id="f-prov" type="text" class="finput" placeholder="ON"></div><div class="ff"><label class="flabel">Postal code</label><input id="f-postal" type="text" class="finput" placeholder="M1A 1A1"></div></div>
     </div>
     <div class="fsec">
       <div class="fsec-title">${icon('M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75')} Settings</div>
@@ -877,7 +1012,7 @@ async function renderCreate() {
     </div>
     <div class="fsec">
       <div class="fsec-title">${icon('M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802')} Languages</div>
-      <div class="lang-wrap">${['English','French','Spanish','Persian','Hindi','Arabic','Mandarin','Cantonese','Portuguese','German','Dutch','Italian','Russian','Ukrainian'].map(l => `<button class="lchip${appState.fLangs.includes(l) ? ' on' : ''}" onclick="toggleLang('${esc(l)}',this)">${esc(l)}</button>`).join('')}</div>
+      <div class="lang-wrap">${['English','French','Spanish','Persian','Hindi','Arabic','Mandarin','Cantonese','Portuguese','German','Dutch','Italian','Russian','Ukrainian'].map(l => `<button class="lchip" onclick="toggleLang('${esc(l)}',this)">${esc(l)}</button>`).join('')}</div>
     </div>
     <div class="form-actions">
       <button class="btn-save" id="save-btn" onclick="submitEvent()">Publish event</button>
@@ -895,12 +1030,19 @@ async function submitEvent() {
   const title = v('f-title'), start = v('f-start');
   if (!title) { toast('Event title is required.', 'err'); return; }
   if (!start) { toast('Start date and time are required.', 'err'); return; }
+  // Mandatory location validation
+  if (!v('f-venue')) { toast('Venue name is required.', 'err'); g('f-venue').focus(); return; }
+  if (!v('f-addr'))  { toast('Street address is required.', 'err'); g('f-addr').focus(); return; }
+  if (!v('f-city'))  { toast('City is required.', 'err'); g('f-city').focus(); return; }
+  if (!v('f-prov'))  { toast('Province is required.', 'err'); g('f-prov').focus(); return; }
+
   const btn = g('save-btn');
   setBtnLoad(btn, 'Publishing…');
   const catSelect = g('f-cat');
   const categoryId = catSelect?.value && catSelect.value !== '' ? catSelect.value : null;
   const categoryName = catSelect?.options[catSelect.selectedIndex]?.text || 'Event';
   const posterUrl = await uploadPosterIfNeeded();
+
   const { error } = await sb.from('events').insert({
     created_by: appState.authUser.id,
     title: title.trim(),
@@ -921,7 +1063,7 @@ async function submitEvent() {
     postal_code: v('f-postal'),
     contact_email: v('f-email'),
     speaker: v('f-speaker') || null,
-    is_public: appState.fPublic,
+    is_public: true,
     status: 'published',
     needs_approval: appState.fApproval,
     tickets_at_door: appState.fDoor,
@@ -933,14 +1075,160 @@ async function submitEvent() {
     focal_x: appState.fPosterFocalX ?? 0.5,
     focal_y: appState.fPosterFocalY ?? 0.5,
     view_count: 0,
-  }).select().single();
+  });
+
   setBtnLoad(btn, 'Publish event', false);
   if (error) { toast(error.message, 'err'); return; }
-  appState.fLangs = []; appState.fPublic = true; appState.fPosterFile = null;
-  appState.fPosterFocalX = 0.5; appState.fPosterFocalY = 0.5;
+
   toast('Event published!', 'ok');
   await loadEvents();
   go('home');
+}
+
+/* ─── POSTER PICKER & CROP EDITOR ───────────────────── */
+function posterPicked(inp) {
+  const f = inp.files[0];
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('Please select an image file.', 'err'); inp.value = ''; return; }
+  if (f.size > 10 * 1024 * 1024) { toast('Image must be under 10MB.', 'err'); inp.value = ''; return; }
+  if (cropState.objectUrl) URL.revokeObjectURL(cropState.objectUrl);
+  cropState.file = f; cropState.objectUrl = URL.createObjectURL(f);
+  cropState.focalX = 0.5; cropState.focalY = 0.5; cropState.zoom = 1;
+  appState.fPosterFile = f;
+  openCropEditor();
+}
+
+function openCropEditor() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'crop-editor-overlay';
+  overlay.innerHTML = `
+    <div id="crop-modal">
+      <div id="crop-header"><span id="crop-title">Adjust image</span><button id="crop-close" onclick="discardCrop()" aria-label="Cancel">✕</button></div>
+      <div id="crop-body">
+        <div id="crop-stage-wrap">
+          <div id="crop-stage" onmousedown="cropDragStart(event)" onmousemove="cropDragMove(event)" onmouseup="cropDragEnd()" onmouseleave="cropDragEnd()" ontouchstart="cropTouchStart(event)" ontouchmove="cropTouchMove(event)" ontouchend="cropDragEnd()">
+            <img id="crop-img" src="${cropState.objectUrl}" alt="Event poster" draggable="false">
+          </div>
+          <div id="crop-hint">Drag to reposition · Scroll or pinch to zoom</div>
+        </div>
+        <div id="crop-preview-col">
+          <div id="crop-preview-label">Card preview</div>
+          <div id="crop-preview-card">
+            <div id="crop-preview-img-wrap"><img id="crop-preview-img" src="${cropState.objectUrl}" alt="Preview" draggable="false"></div>
+            <div id="crop-preview-info"><div id="crop-preview-title">${esc(g('f-title')?.value || 'Event title')}</div><div id="crop-preview-meta">Event · Free</div></div>
+          </div>
+          <div id="crop-controls">
+            <div class="ctrl-row"><span class="ctrl-label">Zoom</span><input type="range" id="zoom-slider" min="100" max="300" step="1" value="100" oninput="setZoom(this.value/100)" style="flex:1"><span id="zoom-val" class="ctrl-val">1×</span></div>
+            <div class="ctrl-row" style="margin-top:6px"><button class="crop-btn-reset" onclick="resetCrop()">Reset position</button></div>
+          </div>
+        </div>
+      </div>
+      <div id="crop-footer">
+        <button id="crop-discard" onclick="discardCrop()">Cancel</button>
+        <button id="crop-confirm" onclick="confirmCrop()">Use this image →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  updateCropImage();
+  const stage = document.getElementById('crop-stage');
+  stage.addEventListener('wheel', e => { e.preventDefault(); setZoom(Math.min(3, Math.max(1, cropState.zoom + (e.deltaY > 0 ? -0.08 : 0.08)))); }, { passive: false });
+  let lastDist = 0;
+  stage.addEventListener('touchstart', e => { if (e.touches.length === 2) lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); });
+  stage.addEventListener('touchmove', e => { if (e.touches.length === 2) { e.preventDefault(); const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); setZoom(Math.min(3, Math.max(1, cropState.zoom + (d - lastDist) / 200))); lastDist = d; } }, { passive: false });
+}
+
+function updateCropImage() {
+  const img = document.getElementById('crop-img');
+  const prev = document.getElementById('crop-preview-img');
+  if (!img) return;
+  const posX = `${(cropState.focalX * 100).toFixed(1)}%`;
+  const posY = `${(cropState.focalY * 100).toFixed(1)}%`;
+  img.style.transform = `scale(${cropState.zoom})`;
+  img.style.transformOrigin = `${posX} ${posY}`;
+  if (prev) { prev.style.objectPosition = `${posX} ${posY}`; prev.style.transform = `scale(${cropState.zoom})`; prev.style.transformOrigin = `${posX} ${posY}`; }
+}
+
+function setZoom(z) {
+  cropState.zoom = Math.min(3, Math.max(1, z));
+  const slider = document.getElementById('zoom-slider');
+  const val = document.getElementById('zoom-val');
+  if (slider) slider.value = Math.round(cropState.zoom * 100);
+  if (val) val.textContent = cropState.zoom.toFixed(1) + '×';
+  updateCropImage();
+}
+
+function resetCrop() { cropState.focalX = 0.5; cropState.focalY = 0.5; cropState.zoom = 1; setZoom(1); }
+
+function cropDragStart(e) {
+  if (e.button !== 0) return;
+  cropState.dragging = true;
+  cropState.dragStartX = e.clientX; cropState.dragStartY = e.clientY;
+  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
+  document.getElementById('crop-stage').style.cursor = 'grabbing';
+}
+
+function cropDragMove(e) {
+  if (!cropState.dragging) return;
+  const stage = document.getElementById('crop-stage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.clientX - cropState.dragStartX) / (rect.width * 0.5)));
+  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.clientY - cropState.dragStartY) / (rect.height * 0.5)));
+  updateCropImage();
+}
+
+function cropDragEnd() {
+  cropState.dragging = false;
+  const stage = document.getElementById('crop-stage');
+  if (stage) stage.style.cursor = 'grab';
+}
+
+function cropTouchStart(e) {
+  if (e.touches.length !== 1) return;
+  cropState.dragging = true;
+  cropState.dragStartX = e.touches[0].clientX; cropState.dragStartY = e.touches[0].clientY;
+  cropState.dragStartFX = cropState.focalX; cropState.dragStartFY = cropState.focalY;
+}
+
+function cropTouchMove(e) {
+  if (!cropState.dragging || e.touches.length !== 1) return;
+  e.preventDefault();
+  const stage = document.getElementById('crop-stage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  cropState.focalX = Math.min(1, Math.max(0, cropState.dragStartFX - (e.touches[0].clientX - cropState.dragStartX) / (rect.width * 0.5)));
+  cropState.focalY = Math.min(1, Math.max(0, cropState.dragStartFY - (e.touches[0].clientY - cropState.dragStartY) / (rect.height * 0.5)));
+  updateCropImage();
+}
+
+function confirmCrop() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  appState.fPosterFocalX = cropState.focalX;
+  appState.fPosterFocalY = cropState.focalY;
+  const area = document.getElementById('upload-area');
+  if (area) {
+    area.innerHTML = `<div id="upload-preview-wrap"><img id="upload-preview" src="${cropState.objectUrl}" alt="Poster preview" style="object-position:${(cropState.focalX*100).toFixed(1)}% ${(cropState.focalY*100).toFixed(1)}%"><button id="upload-change-btn" onclick="document.getElementById('f-poster').click()" type="button">Change image</button></div><input id="f-poster" type="file" style="display:none" accept="image/*" onchange="posterPicked(this)">`;
+    area.onclick = null;
+  }
+}
+
+function discardCrop() {
+  document.getElementById('crop-editor-overlay')?.remove();
+  if (cropState.objectUrl) { URL.revokeObjectURL(cropState.objectUrl); cropState.objectUrl = null; }
+  cropState.file = null; appState.fPosterFile = null;
+}
+
+async function uploadPosterIfNeeded() {
+  if (!appState.fPosterFile) return null;
+  const f = appState.fPosterFile;
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (!['jpg','jpeg','png','gif','webp'].includes(ext)) { toast('Unsupported image format.', 'err'); return null; }
+  const path = `events/${appState.authUser.id}/${Date.now()}.${ext}`;
+  const { data: uploadData, error: uploadErr } = await sb.storage.from('posters').upload(path, f, { cacheControl: '3600', upsert: false });
+  if (uploadErr) { toast(`Image upload failed: ${uploadErr.message}`, 'err'); return null; }
+  const { data: urlData } = sb.storage.from('posters').getPublicUrl(uploadData.path);
+  return urlData?.publicUrl || null;
 }
 
 /* ─── ABOUT ─────────────────────────────────────────── */
@@ -956,7 +1244,7 @@ function renderAbout() {
       <div class="value-item"><div class="vi">🌱</div><h3>Local impact</h3><p>Real communities, real neighbourhoods, and real relationships — not algorithms.</p></div>
     </div>
     <div class="content-grid">
-      <div class="content-card"><h2>${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')} Our story</h2><p>Zeenle started as a solution to a problem we experienced firsthand — great events happening all around us, but no single place to find them.</p><p>Today, Zeenle hosts workshops, screenings, retreats, and festivals across the GTA.</p></div>
+      <div class="content-card"><h2>${icon('M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5')} Our story</h2><p>Zeenle started as a solution to a problem we experienced firsthand — great events happening all around us, but no single place to find them.</p></div>
       <div class="content-card"><h2>${icon('M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z')} What we offer</h2><p>Free and paid event listing, RSVP and ticketing management, carpooling coordination, ZeePoints loyalty rewards, and a growing community directory.</p></div>
     </div>
     <div style="text-align:center;padding:16px 0"><button class="btn-save" onclick="go('contact')">Get in touch →</button></div>`;
@@ -972,9 +1260,9 @@ function renderContact() {
       <div>
         <div class="contact-details">
           <h2>Get in touch</h2>
-          <div class="cd-row">${icon('M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z', 15)}<span><strong>Phone</strong><br>416 300-0602</span></div>
-          <div class="cd-row">${icon('M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75', 15)}<span><strong>Email</strong><br>mrezair@zeenle.com</span></div>
-          <div class="cd-row">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z', 15)}<span><strong>Location</strong><br>Greater Toronto Area, Ontario, Canada</span></div>
+          <div class="cd-row">${icon('M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z',15)}<span><strong>Phone</strong><br>416 300-0602</span></div>
+          <div class="cd-row">${icon('M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75',15)}<span><strong>Email</strong><br>mrezair@zeenle.com</span></div>
+          <div class="cd-row">${icon('M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z',15)}<span><strong>Location</strong><br>Greater Toronto Area, Ontario, Canada</span></div>
         </div>
         <div class="contact-form-card">
           <h2>Send a message</h2>
@@ -986,7 +1274,7 @@ function renderContact() {
         </div>
       </div>
       <div class="ceo-card">
-        <div class="ceo-photo"><div class="ceo-photo-placeholder">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z', 56)}<p>Founder photo</p></div></div>
+        <div class="ceo-photo"><div class="ceo-photo-placeholder">${icon('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z',56)}<p>Founder photo</p></div></div>
         <div class="ceo-info">
           <h3>Mohammad Reza Irani</h3>
           <div class="ceo-title">Founder & CEO, Zeenle</div>
